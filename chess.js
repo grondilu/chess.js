@@ -1429,49 +1429,42 @@ var Chess = function(fen = DEFAULT_POSITION) {
         .join(',')
         .replace(/,,+/g, ',')
         .split(',');
-      var move = '';
+      let move = '';
 
-      for (var half_move = 0; half_move < moves.length - 1; half_move++) {
-        move = move_from_san(moves[half_move], sloppy)
+      for (let half_move = 0; half_move < moves.length - 1; half_move++) {
+        move = move_from_san(moves[half_move], sloppy);
 
         /* move not possible! (don't clear the board to examine to show the
          * latest valid position)
          */
         if (move == null) {
-          return false
+          return false;
         } else {
-          make_move(move)
+          make_move(move);
         }
       }
 
       /* examine last move */
-      move = moves[moves.length - 1]
+      move = moves[moves.length - 1];
       if (POSSIBLE_RESULTS.indexOf(move) > -1) {
         if (has_keys(header) && typeof header.Result === 'undefined') {
-          set_header(['Result', move])
+          set_header(['Result', move]);
         }
       } else {
-        move = move_from_san(move, sloppy)
+        move = move_from_san(move, sloppy);
         if (move == null) {
-          return false
+          return false;
         } else {
-          make_move(move)
+          make_move(move);
         }
       }
-      return true
+      return true;
     },
 
-    header: function() {
-      return set_header(arguments)
-    },
+    header: (...args) => set_header(args),
 
-    ascii: function() {
-      return ascii()
-    },
-
-    turn: function() {
-      return turn
-    },
+    ascii,
+    turn: () => turn,
 
     move: function(move, options) {
       /* The move function can be called with in the following parameters:
@@ -1486,104 +1479,86 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
       // allow the user to specify the sloppy move parser to work around over
       // disambiguation bugs in Fritz and Chessbase
-      var sloppy =
+      let sloppy =
         typeof options !== 'undefined' && 'sloppy' in options
         ? options.sloppy
-        : false
+        : false,
 
-      var move_obj = null
+      move_obj = null;
 
       if (typeof move === 'string') {
-        move_obj = move_from_san(move, sloppy)
+        move_obj = move_from_san(move, sloppy);
       } else if (typeof move === 'object') {
-        var moves = generate_moves()
+        let moves = generate_moves();
 
         /* convert the pretty move object to an ugly move object */
-        for (var i = 0, len = moves.length; i < len; i++) {
+        for (let i = 0, len = moves.length; i < len; i++) 
           if (
             move.from === algebraic(moves[i].from) &&
             move.to === algebraic(moves[i].to) &&
             (!('promotion' in moves[i]) ||
               move.promotion === moves[i].promotion)
           ) {
-            move_obj = moves[i]
-            break
+            move_obj = moves[i];
+            break;
           }
-        }
       }
 
       /* failed to find move */
-      if (!move_obj) {
-        return null
-      }
+      if (!move_obj) return null;
 
       /* need to make a copy of move because we can't generate SAN after the
        * move is made
        */
-      var pretty_move = make_pretty(move_obj)
+      let pretty_move = make_pretty(move_obj);
 
-      make_move(move_obj)
+      make_move(move_obj);
 
-      return pretty_move
+      return pretty_move;
     },
 
     undo: function() {
-      var move = undo_move()
-      return move ? make_pretty(move) : null
+      let move = undo_move();
+      return move ? make_pretty(move) : null;
     },
 
-    clear: function() {
-      return clear()
-    },
+    clear,
+    put,
+    get,
 
-    put: function(piece, square) {
-      return put(piece, square)
-    },
-
-    get: function(square) {
-      return get(square)
-    },
-
-    remove: function(square) {
-      return remove(square)
-    },
-
-    perft: function(depth) {
-      return perft(depth)
-    },
+    remove,
+    perft,
 
     square_color: function(square) {
       if (square in SQUARES) {
-        var sq_0x88 = SQUARES[square]
-        return (rank(sq_0x88) + file(sq_0x88)) % 2 === 0 ? 'light' : 'dark'
+        let sq_0x88 = SQUARES[square];
+        return (rank(sq_0x88) + file(sq_0x88)) % 2 === 0 ? 'light' : 'dark';
       }
 
-      return null
+      return null;
     },
 
     history: function(options) {
-      var reversed_history = []
-      var move_history = []
-      var verbose =
+      let reversed_history = [],
+      move_history = [],
+      verbose =
         typeof options !== 'undefined' &&
         'verbose' in options &&
-        options.verbose
+        options.verbose;
 
       while (history.length > 0) {
-        reversed_history.push(undo_move())
+        reversed_history.push(undo_move());
       }
 
       while (reversed_history.length > 0) {
-        var move = reversed_history.pop()
-        if (verbose) {
-          move_history.push(make_pretty(move))
-        } else {
-          move_history.push(move_to_san(move))
-        }
-        make_move(move)
+        let move = reversed_history.pop();
+        move_history.push(
+          (verbose ? make_pretty : move_to_san)(move)
+        );
+        make_move(move);
       }
 
-      return move_history
+      return move_history;
     }
   }
 }
