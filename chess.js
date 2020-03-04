@@ -26,6 +26,7 @@
  *----------------------------------------------------------------------------*/
 
 
+"use strict";
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
   PAWN = 'p',
@@ -168,61 +169,45 @@ var Chess = function(fen = DEFAULT_POSITION) {
     update_setup(generate_fen())
   }
 
-  function reset() {
-    load(DEFAULT_POSITION)
-  }
+  function reset() { load(DEFAULT_POSITION); }
 
-  function load(fen, keep_headers) {
-    if (typeof keep_headers === 'undefined') {
-      keep_headers = false
-    }
+  function load(fen, keep_headers = false) {
+    let tokens = fen.split(/\s+/),
+      position = tokens[0],
+      square = 0;
 
-    var tokens = fen.split(/\s+/)
-    var position = tokens[0]
-    var square = 0
+    if (!validate_fen(fen).valid) { return false; }
 
-    if (!validate_fen(fen).valid) {
-      return false
-    }
+    clear(keep_headers);
 
-    clear(keep_headers)
-
-    for (var i = 0; i < position.length; i++) {
-      var piece = position.charAt(i)
+    for (let i = 0; i < position.length; i++) {
+      let piece = position.charAt(i);
 
       if (piece === '/') {
-        square += 8
+        square += 8;
       } else if (is_digit(piece)) {
-        square += parseInt(piece, 10)
+        square += parseInt(piece, 10);
       } else {
-        var color = piece < 'a' ? WHITE : BLACK
-        put({ type: piece.toLowerCase(), color: color }, algebraic(square))
-        square++
+        let color = piece < 'a' ? WHITE : BLACK;
+        put({ type: piece.toLowerCase(), color: color }, algebraic(square));
+        square++;
       }
     }
 
-    turn = tokens[1]
+    turn = tokens[1];
 
-    if (tokens[2].indexOf('K') > -1) {
-      castling.w |= BITS.KSIDE_CASTLE
-    }
-    if (tokens[2].indexOf('Q') > -1) {
-      castling.w |= BITS.QSIDE_CASTLE
-    }
-    if (tokens[2].indexOf('k') > -1) {
-      castling.b |= BITS.KSIDE_CASTLE
-    }
-    if (tokens[2].indexOf('q') > -1) {
-      castling.b |= BITS.QSIDE_CASTLE
-    }
+    if (tokens[2].indexOf('K') > -1) { castling.w |= BITS.KSIDE_CASTLE; }
+    if (tokens[2].indexOf('Q') > -1) { castling.w |= BITS.QSIDE_CASTLE; }
+    if (tokens[2].indexOf('k') > -1) { castling.b |= BITS.KSIDE_CASTLE; }
+    if (tokens[2].indexOf('q') > -1) { castling.b |= BITS.QSIDE_CASTLE; }
 
-    ep_square = tokens[3] === '-' ? EMPTY : SQUARES[tokens[3]]
-    half_moves = parseInt(tokens[4], 10)
-    move_number = parseInt(tokens[5], 10)
+    ep_square = tokens[3] === '-' ? EMPTY : SQUARES[tokens[3]];
+    half_moves = parseInt(tokens[4], 10);
+    move_number = parseInt(tokens[5], 10);
 
-    update_setup(generate_fen())
+    update_setup(generate_fen());
 
-    return true
+    return true;
   }
 
   /* TODO: this function is pretty much crap - it validates structure but
@@ -231,7 +216,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
    * we're at it
    */
   function validate_fen(fen) {
-    var errors = {
+    let errors = {
       0: 'No errors.',
       1: 'FEN string must contain six space-delimited fields.',
       2: '6th field (move number) must be a positive integer.',
@@ -321,65 +306,55 @@ var Chess = function(fen = DEFAULT_POSITION) {
   }
 
   function generate_fen() {
-    var empty = 0
-    var fen = ''
+    let empty = 0, fen = '';
 
-    for (var i = SQUARES.a8; i <= SQUARES.h1; i++) {
+    for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
       if (board[i] == null) {
-        empty++
+        empty++;
       } else {
         if (empty > 0) {
-          fen += empty
-          empty = 0
+          fen += empty;
+          empty = 0;
         }
-        var color = board[i].color
-        var piece = board[i].type
+        let color = board[i].color, piece = board[i].type;
 
-        fen += color === WHITE ? piece.toUpperCase() : piece.toLowerCase()
+        fen += color === WHITE ? piece.toUpperCase() : piece.toLowerCase();
       }
 
       if ((i + 1) & 0x88) {
         if (empty > 0) {
-          fen += empty
+          fen += empty;
         }
 
         if (i !== SQUARES.h1) {
-          fen += '/'
+          fen += '/';
         }
 
-        empty = 0
-        i += 8
+        empty = 0;
+        i += 8;
       }
     }
 
-    var cflags = ''
-    if (castling[WHITE] & BITS.KSIDE_CASTLE) {
-      cflags += 'K'
-    }
-    if (castling[WHITE] & BITS.QSIDE_CASTLE) {
-      cflags += 'Q'
-    }
-    if (castling[BLACK] & BITS.KSIDE_CASTLE) {
-      cflags += 'k'
-    }
-    if (castling[BLACK] & BITS.QSIDE_CASTLE) {
-      cflags += 'q'
-    }
+    let cflags = '';
+    if (castling[WHITE] & BITS.KSIDE_CASTLE) { cflags += 'K'; }
+    if (castling[WHITE] & BITS.QSIDE_CASTLE) { cflags += 'Q'; }
+    if (castling[BLACK] & BITS.KSIDE_CASTLE) { cflags += 'k'; }
+    if (castling[BLACK] & BITS.QSIDE_CASTLE) { cflags += 'q'; }
 
     /* do we have an empty castling flag? */
-    cflags = cflags || '-'
-    var epflags = ep_square === EMPTY ? '-' : algebraic(ep_square)
+    cflags = cflags || '-';
+    let epflags = ep_square === EMPTY ? '-' : algebraic(ep_square);
 
     return [fen, turn, cflags, epflags, half_moves, move_number].join(' ')
   }
 
   function set_header(args) {
-    for (var i = 0; i < args.length; i += 2) {
+    for (let i = 0; i < args.length; i += 2) {
       if (typeof args[i] === 'string' && typeof args[i + 1] === 'string') {
-        header[args[i]] = args[i + 1]
+        header[args[i]] = args[i + 1];
       }
     }
-    return header
+    return header;
   }
 
   /* called when the initial board setup is changed with put() or remove().
