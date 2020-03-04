@@ -1156,9 +1156,9 @@ var Chess = function(fen = DEFAULT_POSITION) {
     /***************************************************************************
      * PUBLIC API
      **************************************************************************/
-    load,
-
-    reset,
+    load, reset, in_check, in_checkmate, in_stalemate, insufficient_material,
+    in_threefold_repetition, validate_fen, ascii, turn, clear, put, get,
+    remove, perft,
 
     moves: function(options) {
       /* The internal representation of a chess move is in 0x88 format, and
@@ -1187,32 +1187,18 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
       return moves;
     },
-
-    in_check,
-
-    in_checkmate,
-    in_stalemate,
-
     in_draw: () =>
         half_moves >= 100 ||
         in_stalemate() ||
         insufficient_material() ||
         in_threefold_repetition(),
-
-    insufficient_material,
-    in_threefold_repetition,
-
     game_over: () =>
         half_moves >= 100 ||
         in_checkmate() ||
         in_stalemate() ||
         insufficient_material() ||
         in_threefold_repetition(),
-
-    validate_fen,
-
     fen: () => generate_fen(),
-
     board: function() {
       let output = [],
         row = [];
@@ -1232,7 +1218,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
       return output;
     },
-
     pgn: function(options) {
       /* using the specification from http://www.chessclub.com/help/PGN-spec
        * example for html usage: .pgn({ max_width: 72, newline_char: "<br />" })
@@ -1320,7 +1305,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
       return result.join('');
     },
-
     load_pgn: function(pgn, options) {
       // allow the user to specify the sloppy move parser to work around over
       // disambiguation bugs in Fritz and Chessbase
@@ -1422,34 +1406,28 @@ var Chess = function(fen = DEFAULT_POSITION) {
       ms = ms.replace(/\$\d+/g, '');
 
       /* trim and get array of moves */
-      let moves = trim(ms).split(new RegExp(/\s+/));
-
+      let moves = trim(ms)
+        .split(new RegExp(/\s+/))
       /* delete empty entries */
-      moves = moves
         .join(',')
         .replace(/,,+/g, ',')
-        .split(',');
-      let move = '';
+        .split(','),
+        move = '';
 
       for (let half_move = 0; half_move < moves.length - 1; half_move++) {
         move = move_from_san(moves[half_move], sloppy);
 
         /* move not possible! (don't clear the board to examine to show the
-         * latest valid position)
-         */
-        if (move == null) {
-          return false;
-        } else {
-          make_move(move);
-        }
+         * latest valid position) */
+        if (move == null) { return false; }
+        else { make_move(move); }
       }
 
       /* examine last move */
       move = moves[moves.length - 1];
       if (POSSIBLE_RESULTS.indexOf(move) > -1) {
-        if (has_keys(header) && typeof header.Result === 'undefined') {
+        if (has_keys(header) && typeof header.Result === 'undefined') 
           set_header(['Result', move]);
-        }
       } else {
         move = move_from_san(move, sloppy);
         if (move == null) {
@@ -1460,12 +1438,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
       }
       return true;
     },
-
     header: (...args) => set_header(args),
-
-    ascii,
-    turn: () => turn,
-
     move: function(move, options) {
       /* The move function can be called with in the following parameters:
        *
@@ -1516,19 +1489,10 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
       return pretty_move;
     },
-
     undo: function() {
       let move = undo_move();
       return move ? make_pretty(move) : null;
     },
-
-    clear,
-    put,
-    get,
-
-    remove,
-    perft,
-
     square_color: function(square) {
       if (square in SQUARES) {
         let sq_0x88 = SQUARES[square];
@@ -1537,7 +1501,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
       return null;
     },
-
     history: function(options) {
       let reversed_history = [],
       move_history = [],
