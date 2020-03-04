@@ -1189,7 +1189,7 @@ var Chess = function(fen) {
     var dupe = obj instanceof Array ? [] : {}
 
     for (var property in obj) {
-      if (typeof property === 'object') {
+      if (typeof obj[property] === 'object') {
         dupe[property] = clone(obj[property])
       } else {
         dupe[property] = obj[property]
