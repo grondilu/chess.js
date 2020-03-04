@@ -159,14 +159,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
   var history = []
   var header = {}
 
-  /* if the user passes in a fen string, load it, else default to
-   * starting position
-   */
-  if (typeof fen === 'undefined') {
-    load(DEFAULT_POSITION)
-  } else {
-    load(fen)
-  }
+  load(fen);
 
   function clear(keep_headers) {
     if (typeof keep_headers === 'undefined') {
