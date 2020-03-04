@@ -26,40 +26,40 @@
  *----------------------------------------------------------------------------*/
 
 var Chess = function(fen) {
-  var BLACK = 'b'
-  var WHITE = 'w'
+  const BLACK = 'b',
+  WHITE = 'w',
 
-  var EMPTY = -1
+  EMPTY = -1,
 
-  var PAWN = 'p'
-  var KNIGHT = 'n'
-  var BISHOP = 'b'
-  var ROOK = 'r'
-  var QUEEN = 'q'
-  var KING = 'k'
+  PAWN = 'p',
+  KNIGHT = 'n',
+  BISHOP = 'b',
+  ROOK = 'r',
+  QUEEN = 'q',
+  KING = 'k',
 
-  var SYMBOLS = 'pnbrqkPNBRQK'
+  SYMBOLS = 'pnbrqkPNBRQK',
 
-  var DEFAULT_POSITION =
-    'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+  DEFAULT_POSITION =
+    'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
 
-  var POSSIBLE_RESULTS = ['1-0', '0-1', '1/2-1/2', '*']
+   POSSIBLE_RESULTS = ['1-0', '0-1', '1/2-1/2', '*'],
 
-  var PAWN_OFFSETS = {
+  PAWN_OFFSETS = {
     b: [16, 32, 17, 15],
     w: [-16, -32, -17, -15]
-  }
+  },
 
-  var PIECE_OFFSETS = {
+  PIECE_OFFSETS = {
     n: [-18, -33, -31, -14, 18, 33, 31, 14],
     b: [-17, -15, 17, 15],
     r: [-16, 1, 16, -1],
     q: [-17, -16, -15, 1, 17, 16, 15, -1],
     k: [-17, -16, -15, 1, 17, 16, 15, -1]
-  }
+  },
 
   // prettier-ignore
-  var ATTACKS = [
+  ATTACKS = [
     20, 0, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0, 0,20, 0,
      0,20, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0,20, 0, 0,
      0, 0,20, 0, 0, 0, 0, 24,  0, 0, 0, 0,20, 0, 0, 0,
@@ -75,10 +75,10 @@ var Chess = function(fen) {
      0, 0,20, 0, 0, 0, 0, 24,  0, 0, 0, 0,20, 0, 0, 0,
      0,20, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0,20, 0, 0,
     20, 0, 0, 0, 0, 0, 0, 24,  0, 0, 0, 0, 0, 0,20
-  ];
+  ],
 
   // prettier-ignore
-  var RAYS = [
+  RAYS = [
      17,  0,  0,  0,  0,  0,  0, 16,  0,  0,  0,  0,  0,  0, 15, 0,
       0, 17,  0,  0,  0,  0,  0, 16,  0,  0,  0,  0,  0, 15,  0, 0,
       0,  0, 17,  0,  0,  0,  0, 16,  0,  0,  0,  0, 15,  0,  0, 0,
@@ -94,11 +94,11 @@ var Chess = function(fen) {
       0,  0,-15,  0,  0,  0,  0,-16,  0,  0,  0,  0,-17,  0,  0, 0,
       0,-15,  0,  0,  0,  0,  0,-16,  0,  0,  0,  0,  0,-17,  0, 0,
     -15,  0,  0,  0,  0,  0,  0,-16,  0,  0,  0,  0,  0,  0,-17
-  ];
+  ],
 
-  var SHIFTS = { p: 0, n: 1, b: 2, r: 3, q: 4, k: 5 }
+  SHIFTS = { p: 0, n: 1, b: 2, r: 3, q: 4, k: 5 },
 
-  var FLAGS = {
+  FLAGS = {
     NORMAL: 'n',
     CAPTURE: 'c',
     BIG_PAWN: 'b',
@@ -106,9 +106,9 @@ var Chess = function(fen) {
     PROMOTION: 'p',
     KSIDE_CASTLE: 'k',
     QSIDE_CASTLE: 'q'
-  }
+  },
 
-  var BITS = {
+  BITS = {
     NORMAL: 1,
     CAPTURE: 2,
     BIG_PAWN: 4,
@@ -116,19 +116,19 @@ var Chess = function(fen) {
     PROMOTION: 16,
     KSIDE_CASTLE: 32,
     QSIDE_CASTLE: 64
-  }
+  },
 
-  var RANK_1 = 7
-  var RANK_2 = 6
-  var RANK_3 = 5
-  var RANK_4 = 4
-  var RANK_5 = 3
-  var RANK_6 = 2
-  var RANK_7 = 1
-  var RANK_8 = 0
+  RANK_1 = 7,
+  RANK_2 = 6,
+  RANK_3 = 5,
+  RANK_4 = 4,
+  RANK_5 = 3,
+  RANK_6 = 2,
+  RANK_7 = 1,
+  RANK_8 = 0,
 
   // prettier-ignore
-  var SQUARES = {
+  SQUARES = {
     a8:   0, b8:   1, c8:   2, d8:   3, e8:   4, f8:   5, g8:   6, h8:   7,
     a7:  16, b7:  17, c7:  18, d7:  19, e7:  20, f7:  21, g7:  22, h7:  23,
     a6:  32, b6:  33, c6:  34, d6:  35, e6:  36, f6:  37, g6:  38, h6:  39,
@@ -137,9 +137,9 @@ var Chess = function(fen) {
     a3:  80, b3:  81, c3:  82, d3:  83, e3:  84, f3:  85, g3:  86, h3:  87,
     a2:  96, b2:  97, c2:  98, d2:  99, e2: 100, f2: 101, g2: 102, h2: 103,
     a1: 112, b1: 113, c1: 114, d1: 115, e1: 116, f1: 117, g1: 118, h1: 119
-  };
+  },
 
-  var ROOKS = {
+  ROOKS = {
     w: [
       { square: SQUARES.a1, flag: BITS.QSIDE_CASTLE },
       { square: SQUARES.h1, flag: BITS.KSIDE_CASTLE }
@@ -148,7 +148,7 @@ var Chess = function(fen) {
       { square: SQUARES.a8, flag: BITS.QSIDE_CASTLE },
       { square: SQUARES.h8, flag: BITS.KSIDE_CASTLE }
     ]
-  }
+  };
 
   var board = new Array(128)
   var kings = { w: EMPTY, b: EMPTY }
