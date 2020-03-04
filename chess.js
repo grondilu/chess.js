@@ -149,23 +149,13 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
 var Chess = function(fen = DEFAULT_POSITION) {
 
-  var board = new Array(128)
-  var kings = { w: EMPTY, b: EMPTY }
-  var turn = WHITE
-  var castling = { w: 0, b: 0 }
-  var ep_square = EMPTY
-  var half_moves = 0
-  var move_number = 1
-  var history = []
-  var header = {}
+  let board, kings, turn, castling, ep_square, half_moves, move_number,
+    history, header;
 
+  clear();
   load(fen);
 
-  function clear(keep_headers) {
-    if (typeof keep_headers === 'undefined') {
-      keep_headers = false
-    }
-
+  function clear(keep_headers = false) {
     board = new Array(128)
     kings = { w: EMPTY, b: EMPTY }
     turn = WHITE
