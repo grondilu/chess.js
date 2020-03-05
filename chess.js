@@ -29,6 +29,8 @@
 "use strict";
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
+  DEBUG = true,
+
   PAWN = 'p',
   KNIGHT = 'n',
   BISHOP = 'b',
@@ -308,7 +310,9 @@ class ChessPosition {
 
 }
 
-console.log(new ChessPosition().fen);
+if (DEBUG) {
+  console.log(new ChessPosition().fen);
+}
 
 var Chess = function(fen = DEFAULT_POSITION) {
 
