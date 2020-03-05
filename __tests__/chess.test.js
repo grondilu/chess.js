@@ -1012,14 +1012,19 @@ describe("Validate FEN", function() {
     {fen: '3r1r2/3P2pk/1p1R3p/1Bp2p2/6q1/4Q3/PP3P1P/7K w - - 4 30', error_number: 0},
   ];
 
-  positions.forEach(function(position) {
+  for (let position of positions)
+    it(
+      position.fen + ' (valid: ' + (position.error_number  == 0) + ')',
+      function() {
+        let result = true; 
+        try { chess.validate_fen(position.fen); }
+        catch (err) {
+          if (position.error_number == 0) result = false;
+        }
+        expect(result).toBe(true);
+      }
+    );
 
-    it(position.fen + ' (valid: ' + (position.error_number  == 0) + ')', function() {
-      var result = chess.validate_fen(position.fen);
-      expect(result.error_number == position.error_number).toBe(true);
-    });
-
-  });
 });
 
 describe("History", function() {
