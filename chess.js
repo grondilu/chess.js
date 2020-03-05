@@ -157,16 +157,16 @@ var Chess = function(fen = DEFAULT_POSITION) {
   load(fen);
 
   function clear(keep_headers = false) {
-    board = new Array(128)
-    kings = { w: EMPTY, b: EMPTY }
-    turn = WHITE
-    castling = { w: 0, b: 0 }
-    ep_square = EMPTY
-    half_moves = 0
-    move_number = 1
-    history = []
-    if (!keep_headers) header = {}
-    update_setup(generate_fen())
+    board = new Array(128);
+    kings = { w: EMPTY, b: EMPTY };
+    turn = WHITE;
+    castling = { w: 0, b: 0 };
+    ep_square = EMPTY;
+    half_moves = 0;
+    move_number = 1;
+    history = [];
+    if (!keep_headers) header = {};
+    update_setup(generate_fen());
   }
 
   function reset() { load(DEFAULT_POSITION); }
@@ -198,10 +198,10 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     turn = tokens[1];
 
-    if (tokens[2].indexOf('K') > -1) { castling.w |= BITS.KSIDE_CASTLE; }
-    if (tokens[2].indexOf('Q') > -1) { castling.w |= BITS.QSIDE_CASTLE; }
-    if (tokens[2].indexOf('k') > -1) { castling.b |= BITS.KSIDE_CASTLE; }
-    if (tokens[2].indexOf('q') > -1) { castling.b |= BITS.QSIDE_CASTLE; }
+    if (tokens[2].indexOf('K') > -1) castling.w |= BITS.KSIDE_CASTLE;
+    if (tokens[2].indexOf('Q') > -1) castling.w |= BITS.QSIDE_CASTLE;
+    if (tokens[2].indexOf('k') > -1) castling.b |= BITS.KSIDE_CASTLE;
+    if (tokens[2].indexOf('q') > -1) castling.b |= BITS.QSIDE_CASTLE;
 
     ep_square = tokens[3] === '-' ? EMPTY : SQUARES[tokens[3]];
     half_moves = parseInt(tokens[4], 10);
