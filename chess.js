@@ -25,7 +25,6 @@
  *
  *----------------------------------------------------------------------------*/
 
-
 "use strict";
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
@@ -127,6 +126,8 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
   RANK_7 = 1,
   RANK_8 = 0,
 
+  SECOND_RANK = { b: RANK_7, w: RANK_2 },
+
   // prettier-ignore
   SQUARES = {
     a8:   0, b8:   1, c8:   2, d8:   3, e8:   4, f8:   5, g8:   6, h8:   7,
@@ -164,7 +165,6 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
     "Illegal en-passant square"                                             // 10
   ].map(msg => new Error(msg));
 
-
 function is_digit(c) { return '0123456789'.indexOf(c) !== -1; }
 function algebraic(i) {
   let f = file(i), r = rank(i);
@@ -172,22 +172,17 @@ function algebraic(i) {
 }
 function rank(i) { return i >> 4; }
 function file(i) { return i & 15; }
+function swap_color(c) { return c === WHITE ? BLACK : WHITE; }
 function validate_fen(fen) {
   let tokens = fen.split(/\s+/);
   if (tokens.length !== 6) throw ERRORS[0];
-  if (isNaN(tokens[5]) || parseInt(tokens[5], 10) <= 0)
-    throw ERRORS[1];
-  if (isNaN(tokens[4]) || parseInt(tokens[4], 10) < 0)
-    throw ERRORS[2];
-  if (!/^(-|[abcdefgh][36])$/.test(tokens[3]))
-    throw ERRORS[3];
-  if (!/^(KQ?k?q?|Qk?q?|kq?|q|-)$/.test(tokens[2]))
-    throw ERRORS[4];
-  if (!/^(w|b)$/.test(tokens[1])) 
-    throw ERRORS[5];
+  if (isNaN(tokens[5]) || parseInt(tokens[5], 10) <= 0) throw ERRORS[1];
+  if (isNaN(tokens[4]) || parseInt(tokens[4], 10) < 0) throw ERRORS[2];
+  if (!/^(-|[abcdefgh][36])$/.test(tokens[3])) throw ERRORS[3];
+  if (!/^(KQ?k?q?|Qk?q?|kq?|q|-)$/.test(tokens[2])) throw ERRORS[4];
+  if (!/^(w|b)$/.test(tokens[1])) throw ERRORS[5];
   let rows = tokens[0].split('/');
-  if (rows.length !== 8) 
-    throw ERRORS[6];
+  if (rows.length !== 8) throw ERRORS[6];
 
   for (let i = 0; i < rows.length; i++) {
     /* check for right sum of fields AND not two numbers in succession */
@@ -196,13 +191,11 @@ function validate_fen(fen) {
 
     for (let k = 0; k < rows[i].length; k++) {
       if (!isNaN(rows[i][k])) {
-        if (previous_was_number)
-          throw ERRORS[7];
+        if (previous_was_number) throw ERRORS[7];
         sum_fields += parseInt(rows[i][k], 10);
         previous_was_number = true;
       } else {
-        if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) 
-          throw ERRORS[8];
+        if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) throw ERRORS[8];
         sum_fields += 1;
         previous_was_number = false;
       }
@@ -215,11 +208,27 @@ function validate_fen(fen) {
     (tokens[3][1] == '3' && tokens[1] == 'w') ||
     (tokens[3][1] == '6' && tokens[1] == 'b')
   ) throw ERRORS[10];
-
-  /* everything's okay! */
-  return;
 }
 
+class ChessMove {
+  constructor(move) {
+    let match = move.match(
+      /([a-h][1-8])([a-h][1-8])([qrbnQRBN])?/
+    );
+    if (match) {
+      this.from = SQUARES[match[1]];
+      this.to   = SQUARES[match[2]];
+      if (match[3]) this.promotion = match[3];
+      if (this.from == this.to) throw new Error("degenerate move");
+      if (this.promotion && !(rank(this.to) == 7 || rank(this.to) == 0))
+        throw new Error("wrong destination rank for a promotion");
+    } else throw new Error("wrong move syntax");
+  }
+  get UCI() {
+    return algebraic(this.from) + algebraic(this.to) +
+      (this.promotion || '');
+  }
+}
 class ChessPosition {
   constructor(fen = DEFAULT_POSITION) {
     validate_fen(fen);
@@ -301,17 +310,249 @@ class ChessPosition {
     return [fen, this.turn, cflags, epflags, this.half_moves, this.move_number].join(' ')
   }
 
-  *moves() {
+  moves(options) {
+    let color = this.turn, board = this.board,
+      moves = [],
+      us = this.turn,
+      them = swap_color(us),
+      second_rank = { b: RANK_7, w: RANK_2 },
+
+      first_sq = SQUARES.a8,
+      last_sq = SQUARES.h1,
+      single_square = false,
+
+      /* do we want legal moves? */
+      legal =
+      typeof options !== 'undefined' && 'legal' in options
+      ? options.legal
+      : true;
+    function add_move(from, to) {
+      if (
+        board[from].type === PAWN &&
+        (rank(to) === RANK_8 || rank(to) === RANK_1)
+      ) {
+        /* pawn promotion */
+        for (let piece of [QUEEN, ROOK, BISHOP, KNIGHT])
+          moves.push(new ChessMove(algebraic(from)+algebraic(to)+piece));
+      } else {
+        moves.push(new ChessMove(algebraic(from)+algebraic(to)));
+      }
+    }
+
+    /* are we generating moves for a single square? */
+    if (typeof options !== 'undefined' && 'square' in options) {
+      if (options.square in SQUARES) {
+        first_sq = last_sq = SQUARES[options.square];
+        single_square = true;
+      } else {
+        /* invalid square */
+        return [];
+      }
+    }
+
+    for (let i = first_sq; i <= last_sq; i++) {
+      /* did we run off the end of the board */
+      if (i & 0x88) {
+        i += 7;
+        continue;
+      }
+
+      let piece = this.board[i];
+      if (piece == null || piece.color !== us) continue;
+
+      if (piece.type === PAWN) {
+        /* single square, non-capturing */
+        let square = i + PAWN_OFFSETS[us][0];
+        if (board[square] == null) {
+          add_move(i, square);
+
+          /* double square */
+          square = i + PAWN_OFFSETS[us][1];
+          if (second_rank[us] === rank(i) && this.board[square] == null) {
+            add_move(i, square);
+          }
+        }
+
+        /* pawn captures */
+        for (let j = 2; j < 4; j++) {
+          let square = i + PAWN_OFFSETS[us][j];
+          if (square & 0x88) continue
+
+          if (this.board[square] != null && this.board[square].color === them) {
+            add_move(i, square);
+          } else if (square === this.ep_square) {
+            add_move(i, ep_square);
+          }
+        }
+      } else {
+        for (let j = 0, len = PIECE_OFFSETS[piece.type].length; j < len; j++) {
+          let offset = PIECE_OFFSETS[piece.type][j],
+            square = i;
+
+          while (true) {
+            square += offset;
+            if (square & 0x88) break;
+
+            if (this.board[square] == null) {
+              add_move(i, square);
+            } else {
+              if (this.board[square].color === us) break;
+              add_move(i, square);
+              break;
+            }
+
+            /* break, if knight or king */
+            if (piece.type === 'n' || piece.type === 'k') break;
+          }
+        }
+      }
+    }
+
+    /* check for castling if: a) we're generating all moves, or b) we're doing
+     * single square move generation on the king's square
+     */
+    if (!single_square || last_sq === this.kings[us]) {
+      /* king-side castling */
+      if (this.castling[us] & BITS.KSIDE_CASTLE) {
+        let castling_from = this.kings[us],
+          castling_to = castling_from + 2;
+
+        if (
+          this.board[castling_from + 1] == null &&
+          this.board[castling_to] == null &&
+          !this.attacked(them, castling_from) &&
+          !this.attacked(them, castling_from + 1) &&
+          !this.attacked(them, castling_to)
+        ) add_move(castling_from, castling_to);
+      }
+
+      /* queen-side castling */
+      if (this.castling[us] & BITS.QSIDE_CASTLE) {
+        let castling_from = this.kings[us],
+          castling_to = castling_from - 2;
+
+        if (
+          this.board[castling_from - 1] == null &&
+          this.board[castling_from - 2] == null &&
+          this.board[castling_from - 3] == null &&
+          !this.attacked(them, castling_from) &&
+          !this.attacked(them, castling_from - 1) &&
+          !this.attacked(them, castling_to)
+        ) add_move(castling_from, castling_to);
+      }
+    }
+
+    /* return all pseudo-legal moves (this includes moves that allow the king
+     * to be captured)
+     */
+    if (!legal) return moves;
+
+    /* filter out illegal moves */
+    let legal_moves = [];
+    for (let move of moves) {
+      make_move(move);
+      if (!this.king_attacked(us)) legal_moves.push(move);
+      undo_move();
+    }
+
+    return legal_moves;
+  }
+  attacked(color, square) {
+    for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
+      /* did we run off the end of the board */
+      if (i & 0x88) {
+        i += 7;
+        continue;
+      }
+
+      /* if empty square or wrong color */
+      if (this.board[i] == null || this.board[i].color !== color) continue;
+
+      let piece = this.board[i], difference = i - square,
+        index = difference + 119;
+
+      if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
+        if (piece.type === PAWN) {
+          if (difference > 0) {
+            if (piece.color === WHITE) return true;
+          } else {
+            if (piece.color === BLACK) return true;
+          }
+          continue;
+        }
+
+        /* if the piece is a knight or a king */
+        if (piece.type === 'n' || piece.type === 'k') return true;
+
+        let offset = RAYS[index], j = i + offset,
+          blocked = false;
+
+        while (j !== square) {
+          if (this.board[j] != null) {
+            blocked = true;
+            break;
+          }
+          j += offset;
+        }
+
+        if (!blocked) return true;
+      }
+    }
+
+    return false;
+  }
+  get check() { return this.king_attacked(this.turn); }
+  king_attacked(color) {
+    return this.attacked(swap_color(color), this.kings[color]);
   }
 
-  move(move) {
+  make_move(move) {
+    if (move instanceof ChessMove) {
+      let clone = this.clone,
+        turn     = clone.turn,
+        board    = clone.board,
+        castling = clone.castling,
+        kings    = clone.kings,
+        piece    = board[move.from];
+
+      if (piece.type === PAWN) {
+        if (
+          move.to == move.from + PAWN_OFFSETS[turn][1] &&
+          !(
+            SECOND_RANK[turn] === rank(move.from) &&
+            board[move.from + PAWN_OFFSETS[turn][0]] == null &&
+            board[move.to] == null
+          )
+        ) throw new Error("Illegal double-squared pawn move");
+
+      } else throw new Error("wrong move type");
+
+        clone.turn = swap_color(clone.turn);
+        board[move.to] = board[move.from];
+        board[move.from] = null;
+
+        return clone;
+    }
   }
 
+  get clone() { return new ChessPosition(this.fen); }
 
 }
 
-if (DEBUG) {
-  console.log(new ChessPosition().fen);
+class ChessGame {
+  constructor(header, moves, adjudication = "*") {
+    if (typeof header !== "object")
+      throw new Error("wrong header type");
+    if (typeof moves == "array" && moves.every(x => x instanceof ChessMove))
+      throw new Error("wrong moves type");
+    if (!(POSSIBLE_RESULTS.includes(adjudication)))
+      throw new Error("wrong adjudictation type");
+    this.header = header;
+    this.moves = moves;
+    this.adjudication = adjudication;
+  }
+  get pgn() {
+  }
 }
 
 var Chess = function(fen = DEFAULT_POSITION) {
@@ -583,7 +824,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
       us = turn,
       them = swap_color(us),
       second_rank = { b: RANK_7, w: RANK_2 },
-      
+
       first_sq = SQUARES.a8,
       last_sq = SQUARES.h1,
       single_square = false,
@@ -929,13 +1170,8 @@ var Chess = function(fen = DEFAULT_POSITION) {
     board[move.from] = null;
 
     /* if ep capture, remove the captured pawn */
-    if (move.flags & BITS.EP_CAPTURE) {
-      if (turn === BLACK) {
-        board[move.to - 16] = null;
-      } else {
-        board[move.to + 16] = null;
-      }
-    }
+    if (move.flags & BITS.EP_CAPTURE) 
+      board[move.to + (turn === BLACK ? -16 : +16)] = null;
 
     /* if pawn promotion, replace with new piece */
     if (move.flags & BITS.PROMOTION) 
@@ -1259,8 +1495,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
      * PUBLIC CONSTANTS (is there a better way to do this?)
      **************************************************************************/
     WHITE, BLACK, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
-    FLAGS,
-    ERRORS,
+    FLAGS, ERRORS,
     SQUARES: (function() {
       /* from the ECMA-262 spec (section 12.6.4):
        * "The mechanics of enumerating the properties ... is
@@ -1660,3 +1895,16 @@ if (typeof define !== 'undefined')
   define(function() {
     return Chess
   })
+
+if (DEBUG) {
+  let pos = new ChessPosition();
+  console.log(
+    //new ChessMove("e2e8q").UCI
+    //new ChessGame({},[new ChessMove("e2e4")],"*")
+    //pos.moves({legal: false})
+    //.map(m => m.UCI)
+    pos.make_move(new ChessMove("a2a4")).fen
+  );
+}
+
+
