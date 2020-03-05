@@ -472,8 +472,8 @@ describe("PGN", function() {
 
 describe("Load PGN", function() {
 
-  var chess = new Chess();
-  var tests = [
+  let chess = new Chess(),
+    tests = [
      {pgn: [
        '[Event "Reykjavik WCh"]',
        '[Site "Reykjavik WCh"]',
@@ -1012,18 +1012,20 @@ describe("Validate FEN", function() {
     {fen: '3r1r2/3P2pk/1p1R3p/1Bp2p2/6q1/4Q3/PP3P1P/7K w - - 4 30', error_number: 0},
   ];
 
-  for (let position of positions)
+  for (let position of positions) {
     it(
-      position.fen + ' (valid: ' + (position.error_number  == 0) + ')',
+      position.fen + ' (valid: ' + (position.error_number  == 0) + ')', 
       function() {
         let result = true; 
         try { chess.validate_fen(position.fen); }
         catch (err) {
-          if (position.error_number == 0) result = false;
+          if ( position.error_number == 0 ) { result = false; }
+          else { expect(chess.ERRORS[position.error_number - 1]).toBe(err); }
         }
         expect(result).toBe(true);
       }
     );
+  }
 
 });
 

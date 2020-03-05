@@ -146,7 +146,169 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
       { square: SQUARES.a8, flag: BITS.QSIDE_CASTLE },
       { square: SQUARES.h8, flag: BITS.KSIDE_CASTLE }
     ]
-  };
+  },
+
+  ERRORS = [
+    "FEN string must contain six space-delimited fields.",                  // 0
+    "6th field (move number) must be a positive integer.",                  // 1
+    "5th field (half move counter) must be a non-negative integer.",        // 2
+    "4th field (en-passant square) is invalid.",                            // 3
+    "3rd field (castling availability) is invalid.",                        // 4
+    "2nd field (side to move) is invalid.",                                 // 5
+    "1st field (piece positions) does not contain 8 '/'-delimited rows.",   // 6
+    "1st field (piece positions) is invalid [consecutive numbers].",        // 7
+    "1st field (piece positions) is invalid [invalid piece].",              // 8
+    "1st field (piece positions) is invalid [row too large].",              // 9
+    "Illegal en-passant square"                                             // 10
+  ].map(msg => new Error(msg));
+
+
+function is_digit(c) { return '0123456789'.indexOf(c) !== -1; }
+function algebraic(i) {
+  let f = file(i), r = rank(i);
+  return 'abcdefgh'.substring(f, f + 1) + '87654321'.substring(r, r + 1)
+}
+function rank(i) { return i >> 4; }
+function file(i) { return i & 15; }
+function validate_fen(fen) {
+  let tokens = fen.split(/\s+/);
+  if (tokens.length !== 6) throw ERRORS[0];
+  if (isNaN(tokens[5]) || parseInt(tokens[5], 10) <= 0)
+    throw ERRORS[1];
+  if (isNaN(tokens[4]) || parseInt(tokens[4], 10) < 0)
+    throw ERRORS[2];
+  if (!/^(-|[abcdefgh][36])$/.test(tokens[3]))
+    throw ERRORS[3];
+  if (!/^(KQ?k?q?|Qk?q?|kq?|q|-)$/.test(tokens[2]))
+    throw ERRORS[4];
+  if (!/^(w|b)$/.test(tokens[1])) 
+    throw ERRORS[5];
+  let rows = tokens[0].split('/');
+  if (rows.length !== 8) 
+    throw ERRORS[6];
+
+  for (let i = 0; i < rows.length; i++) {
+    /* check for right sum of fields AND not two numbers in succession */
+    let sum_fields = 0,
+      previous_was_number = false;
+
+    for (let k = 0; k < rows[i].length; k++) {
+      if (!isNaN(rows[i][k])) {
+        if (previous_was_number)
+          throw ERRORS[7];
+        sum_fields += parseInt(rows[i][k], 10);
+        previous_was_number = true;
+      } else {
+        if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) 
+          throw ERRORS[8];
+        sum_fields += 1;
+        previous_was_number = false;
+      }
+    }
+    if (sum_fields !== 8) 
+      throw ERRORS[9];
+  }
+
+  if (
+    (tokens[3][1] == '3' && tokens[1] == 'w') ||
+    (tokens[3][1] == '6' && tokens[1] == 'b')
+  ) throw ERRORS[10];
+
+  /* everything's okay! */
+  return;
+}
+
+class ChessPosition {
+  constructor(fen = DEFAULT_POSITION) {
+    validate_fen(fen);
+    this.board = new Array(128);
+    this.kings = { w: EMPTY, b: EMPTY };
+    this.castling = { w: 0, b: 0 };
+
+    let tokens = fen.split(/\s+/),
+      position = tokens[0],
+      square = 0;
+
+    for (let i = 0; i < position.length; i++) {
+      let piece = position.charAt(i);
+      if (piece === '/') {
+        square += 8;
+      } else if (is_digit(piece)) {
+        square += parseInt(piece, 10);
+      } else {
+        let color = piece < 'a' ? WHITE : BLACK,
+          type = piece.toLowerCase();
+        this.board[square] = { type, color };
+        if (type === KING) this.kings[color] = square;
+        square++;
+      }
+    }
+
+    this.turn = tokens[1];
+
+    if (tokens[2].indexOf('K') > -1) this.castling.w |= BITS.KSIDE_CASTLE;
+    if (tokens[2].indexOf('Q') > -1) this.castling.w |= BITS.QSIDE_CASTLE;
+    if (tokens[2].indexOf('k') > -1) this.castling.b |= BITS.KSIDE_CASTLE;
+    if (tokens[2].indexOf('q') > -1) this.castling.b |= BITS.QSIDE_CASTLE;
+
+    this.ep_square = tokens[3] === '-' ? EMPTY : SQUARES[tokens[3]];
+    this.half_moves = parseInt(tokens[4], 10);
+    this.move_number = parseInt(tokens[5], 10);
+
+  }
+  get fen() {
+    let empty = 0, fen = '';
+    for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
+      if (this.board[i] == null) {
+        empty++;
+      } else {
+        if (empty > 0) {
+          fen += empty;
+          empty = 0;
+        }
+        let color = this.board[i].color,
+          piece = this.board[i].type;
+
+        fen += color === WHITE ? piece.toUpperCase() : piece.toLowerCase();
+      }
+
+      if ((i + 1) & 0x88) {
+        if (empty > 0) {
+          fen += empty;
+        }
+
+        if (i !== SQUARES.h1) {
+          fen += '/';
+        }
+
+        empty = 0;
+        i += 8;
+      }
+    }
+
+    let cflags = '';
+    if (this.castling[WHITE] & BITS.KSIDE_CASTLE) { cflags += 'K'; }
+    if (this.castling[WHITE] & BITS.QSIDE_CASTLE) { cflags += 'Q'; }
+    if (this.castling[BLACK] & BITS.KSIDE_CASTLE) { cflags += 'k'; }
+    if (this.castling[BLACK] & BITS.QSIDE_CASTLE) { cflags += 'q'; }
+
+    /* do we have an empty castling flag? */
+    cflags = cflags || '-';
+    let epflags = this.ep_square === EMPTY ? '-' : algebraic(this.ep_square);
+
+    return [fen, this.turn, cflags, epflags, this.half_moves, this.move_number].join(' ')
+  }
+
+  *moves() {
+  }
+
+  move(move) {
+  }
+
+
+}
+
+console.log(new ChessPosition().fen);
 
 var Chess = function(fen = DEFAULT_POSITION) {
 
@@ -218,19 +380,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
    * we're at it
    */
   function validate_fen(fen) {
-    const ERRORS = [
-      "FEN string must contain six space-delimited fields.",
-      "6th field (move number) must be a positive integer.",
-      "5th field (half move counter) must be a non-negative integer.",
-      "4th field (en-passant square) is invalid.",
-      "3rd field (castling availability) is invalid.",
-      "2nd field (side to move) is invalid.",
-      "1st field (piece positions) does not contain 8 '/'-delimited rows.",
-      "1st field (piece positions) is invalid [consecutive numbers].",
-      "1st field (piece positions) is invalid [invalid piece].",
-      "1st field (piece positions) is invalid [row too large].",
-    ].map(msg => new Error(msg));
-
     let tokens = fen.split(/\s+/);
     if (tokens.length !== 6) throw ERRORS[0];
     if (isNaN(tokens[5]) || parseInt(tokens[5], 10) <= 0)
@@ -272,7 +421,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
     if (
       (tokens[3][1] == '3' && tokens[1] == 'w') ||
       (tokens[3][1] == '6' && tokens[1] == 'b')
-    ) throw new Error("Illegal en-passant square");
+    ) throw ERRORS[10];
 
     /* everything's okay! */
     return;
@@ -1106,6 +1255,8 @@ var Chess = function(fen = DEFAULT_POSITION) {
      * PUBLIC CONSTANTS (is there a better way to do this?)
      **************************************************************************/
     WHITE, BLACK, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
+    FLAGS,
+    ERRORS,
     SQUARES: (function() {
       /* from the ECMA-262 spec (section 12.6.4):
        * "The mechanics of enumerating the properties ... is
@@ -1123,7 +1274,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
       }
       return keys;
     })(),
-    FLAGS,
 
     /***************************************************************************
      * PUBLIC API
