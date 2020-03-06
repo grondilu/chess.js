@@ -28,8 +28,6 @@
 "use strict";
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
-  DEBUG = true,
-
   PAWN = 'p',
   KNIGHT = 'n',
   BISHOP = 'b',
@@ -162,9 +160,11 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
     "1st field (piece positions) is invalid [consecutive numbers].",        // 7
     "1st field (piece positions) is invalid [invalid piece].",              // 8
     "1st field (piece positions) is invalid [row too large].",              // 9
-    "Illegal en-passant square"                                             // 10
+    "Illegal en-passant square",                                           // 10
+    "Wrong number of kings"
   ].map(msg => new Error(msg));
 
+function die(msg) { throw new Error(msg); }
 function is_digit(c) { return '0123456789'.indexOf(c) !== -1; }
 function algebraic(i) {
   let f = file(i), r = rank(i);
@@ -208,9 +208,10 @@ function validate_fen(fen) {
     (tokens[3][1] == '3' && tokens[1] == 'w') ||
     (tokens[3][1] == '6' && tokens[1] == 'b')
   ) throw ERRORS[10];
+
 }
 
-class ChessMove {
+class Move {
   constructor(move) {
     let match = move.match(
       /([a-h][1-8])([a-h][1-8])([qrbnQRBN])?/
@@ -219,17 +220,17 @@ class ChessMove {
       this.from = SQUARES[match[1]];
       this.to   = SQUARES[match[2]];
       if (match[3]) this.promotion = match[3];
-      if (this.from == this.to) throw new Error("degenerate move");
+      if (this.from == this.to) die("degenerate move");
       if (this.promotion && !(rank(this.to) == 7 || rank(this.to) == 0))
-        throw new Error("wrong destination rank for a promotion");
-    } else throw new Error("wrong move syntax");
+        die("wrong destination rank for a promotion");
+    } else die("wrong move syntax");
   }
   get UCI() {
     return algebraic(this.from) + algebraic(this.to) +
       (this.promotion || '');
   }
 }
-class ChessPosition {
+class Position {
   constructor(fen = DEFAULT_POSITION) {
     validate_fen(fen);
     this.board = new Array(128);
@@ -315,7 +316,6 @@ class ChessPosition {
       moves = [],
       us = this.turn,
       them = swap_color(us),
-      second_rank = { b: RANK_7, w: RANK_2 },
 
       first_sq = SQUARES.a8,
       last_sq = SQUARES.h1,
@@ -333,9 +333,9 @@ class ChessPosition {
       ) {
         /* pawn promotion */
         for (let piece of [QUEEN, ROOK, BISHOP, KNIGHT])
-          moves.push(new ChessMove(algebraic(from)+algebraic(to)+piece));
+          moves.push(new Move(algebraic(from)+algebraic(to)+piece));
       } else {
-        moves.push(new ChessMove(algebraic(from)+algebraic(to)));
+        moves.push(new Move(algebraic(from)+algebraic(to)));
       }
     }
 
@@ -351,11 +351,8 @@ class ChessPosition {
     }
 
     for (let i = first_sq; i <= last_sq; i++) {
-      /* did we run off the end of the board */
-      if (i & 0x88) {
-        i += 7;
-        continue;
-      }
+      /* did we run off the end of the board ? */
+      if (i & 0x88) { i += 7; continue; }
 
       let piece = this.board[i];
       if (piece == null || piece.color !== us) continue;
@@ -368,7 +365,7 @@ class ChessPosition {
 
           /* double square */
           square = i + PAWN_OFFSETS[us][1];
-          if (second_rank[us] === rank(i) && this.board[square] == null) {
+          if (SECOND_RANK[us] === rank(i) && this.board[square] == null) {
             add_move(i, square);
           }
         }
@@ -450,9 +447,9 @@ class ChessPosition {
     /* filter out illegal moves */
     let legal_moves = [];
     for (let move of moves) {
-      make_move(move);
-      if (!this.king_attacked(us)) legal_moves.push(move);
-      undo_move();
+      try { this.make_move(move); }
+      catch (err) { continue; }
+      legal_moves.push(move);
     }
 
     return legal_moves;
@@ -507,46 +504,95 @@ class ChessPosition {
   }
 
   make_move(move) {
-    if (move instanceof ChessMove) {
+    if (move instanceof Move) {
       let clone = this.clone,
         turn     = clone.turn,
         board    = clone.board,
         castling = clone.castling,
         kings    = clone.kings,
-        piece    = board[move.from];
+        piece    = board[move.from],
+        offset   = move.to - move.from;
 
-      if (piece.type === PAWN) {
-        if (
-          move.to == move.from + PAWN_OFFSETS[turn][1] &&
-          !(
-            SECOND_RANK[turn] === rank(move.from) &&
-            board[move.from + PAWN_OFFSETS[turn][0]] == null &&
-            board[move.to] == null
-          )
-        ) throw new Error("Illegal double-squared pawn move");
+      if (!piece) { die("Empty square"); }
+      else if (piece.type === PAWN) {
+        let pawn_offsets = PAWN_OFFSETS[turn];
+        switch (offset) {
+          case pawn_offsets[0]:
+            if (board[move.to])
+              die("Illegal single-square pawn move");
+            if (
+              (
+              (rank(move.to) === RANK_8 && turn === WHITE) ||
+              (rank(move.to) === RANK_1 && turn === BLACK)
+              ) && !move.promotion
+            ) die("promotion was expected");
+            break;
+          case pawn_offsets[1]:
+            let ep_square = move.from + pawn_offsets[0];
+            if (
+              !(
+                SECOND_RANK[turn] === rank(move.from) &&
+                board[ep_square] == null &&
+                board[move.to] == null
+              )
+            ) die("Illegal double-squared pawn move");
+            clone.ep_square = ep_square;
+            break;
+          case pawn_offsets[2]:
+          case pawn_offsets[3]:
+            if (!board[move.to] && clone.ep_square !== move.to)
+              die("Illegal pawn capture");
+            break;
+          default:
+            die("Illegal pawn move");
+        }
+        clone.half_moves = 0;
+      } else if (piece.type === 'k' || piece.type == 'n') {
+        if (!PIECE_OFFSETS[piece.type].includes(offset))
+          die("wrong move offset for " + (piece.type == 'k' ? "king" : "knight"));
+        if (board[move.to] && board[move.to].color === turn)
+          die("destination square already occupied");
+      } else {
+        let piece_offsets = PIECE_OFFSETS[piece.type],
+          piece_offset = piece_offsets.find(x => offset%x == 0 && offset/x > 0);
+        if (!piece_offset)
+          die("illegal piece displacement");
+        for (let o = piece_offset; o < offset; o+=piece_offset)
+          if (board[o])
+            die("blocked displacement");
+      }
+      if (board[move.to] && board[move.to].type == KING)
+        die("destination square is occupied by a king");
+      if (board[move.to] && board[move.to].color == turn)
+        die("destination square is occupied by same color piece");
+      if (turn === BLACK) clone.move_number++;
+      if (board[move.to] && board[move.to].color !== turn)
+        clone.half_moves = 0;
+      clone.turn = swap_color(clone.turn);
+      board[move.to] = board[move.from];
+      board[move.from] = null;
 
-      } else throw new Error("wrong move type");
+      if (move.promotion)
+        board[move.to].type = move.promotion;
 
-        clone.turn = swap_color(clone.turn);
-        board[move.to] = board[move.from];
-        board[move.from] = null;
+      if (this.check) die("check!");
+      return clone;
+    } else die("wrong argument type");
 
-        return clone;
-    }
   }
 
-  get clone() { return new ChessPosition(this.fen); }
+  get clone() { return new Position(this.fen); }
 
 }
 
-class ChessGame {
+class Game {
   constructor(header, moves, adjudication = "*") {
     if (typeof header !== "object")
-      throw new Error("wrong header type");
-    if (typeof moves == "array" && moves.every(x => x instanceof ChessMove))
-      throw new Error("wrong moves type");
+      die("wrong header type");
+    if (typeof moves == "array" && moves.every(x => x instanceof Move))
+      die("wrong moves type");
     if (!(POSSIBLE_RESULTS.includes(adjudication)))
-      throw new Error("wrong adjudictation type");
+      die("wrong adjudictation type");
     this.header = header;
     this.moves = moves;
     this.adjudication = adjudication;
@@ -583,9 +629,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
       position = tokens[0],
       square = 0;
 
-    try { validate_fen(fen) } catch (err) {
-      return false;
-    }
+    validate_fen(fen);
 
     clear(keep_headers);
 
@@ -617,59 +661,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
     update_setup(generate_fen());
 
     return true;
-  }
-
-  /* TODO: this function is pretty much crap - it validates structure but
-   * completely ignores content (e.g. doesn't verify that each side has a king)
-   * ... we should rewrite this, and ditch the silly error_number field while
-   * we're at it
-   */
-  function validate_fen(fen) {
-    let tokens = fen.split(/\s+/);
-    if (tokens.length !== 6) throw ERRORS[0];
-    if (isNaN(tokens[5]) || parseInt(tokens[5], 10) <= 0)
-      throw ERRORS[1];
-    if (isNaN(tokens[4]) || parseInt(tokens[4], 10) < 0)
-      throw ERRORS[2];
-    if (!/^(-|[abcdefgh][36])$/.test(tokens[3]))
-      throw ERRORS[3];
-    if (!/^(KQ?k?q?|Qk?q?|kq?|q|-)$/.test(tokens[2]))
-      throw ERRORS[4];
-    if (!/^(w|b)$/.test(tokens[1])) 
-      throw ERRORS[5];
-    let rows = tokens[0].split('/');
-    if (rows.length !== 8) 
-      throw ERRORS[6];
-
-    for (let i = 0; i < rows.length; i++) {
-      /* check for right sum of fields AND not two numbers in succession */
-      let sum_fields = 0,
-        previous_was_number = false;
-
-      for (let k = 0; k < rows[i].length; k++) {
-        if (!isNaN(rows[i][k])) {
-          if (previous_was_number)
-            throw ERRORS[7];
-          sum_fields += parseInt(rows[i][k], 10);
-          previous_was_number = true;
-        } else {
-          if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) 
-            throw ERRORS[8];
-          sum_fields += 1;
-          previous_was_number = false;
-        }
-      }
-      if (sum_fields !== 8) 
-        throw ERRORS[9];
-    }
-
-    if (
-      (tokens[3][1] == '3' && tokens[1] == 'w') ||
-      (tokens[3][1] == '6' && tokens[1] == 'b')
-    ) throw ERRORS[10];
-
-    /* everything's okay! */
-    return;
   }
 
   function generate_fen() {
@@ -823,7 +814,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
     let moves = [],
       us = turn,
       them = swap_color(us),
-      second_rank = { b: RANK_7, w: RANK_2 },
 
       first_sq = SQUARES.a8,
       last_sq = SQUARES.h1,
@@ -864,7 +854,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
           /* double square */
           square = i + PAWN_OFFSETS[us][1];
-          if (second_rank[us] === rank(i) && board[square] == null) {
+          if (SECOND_RANK[us] === rank(i) && board[square] == null) {
             add_move(board, moves, i, square, BITS.BIG_PAWN);
           }
         }
@@ -1495,7 +1485,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
      * PUBLIC CONSTANTS (is there a better way to do this?)
      **************************************************************************/
     WHITE, BLACK, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
-    FLAGS, ERRORS,
+    FLAGS, ERRORS, DEFAULT_POSITION,
     SQUARES: (function() {
       /* from the ECMA-262 spec (section 12.6.4):
        * "The mechanics of enumerating the properties ... is
@@ -1520,6 +1510,8 @@ var Chess = function(fen = DEFAULT_POSITION) {
     load, reset, in_check, in_checkmate, in_stalemate, insufficient_material,
     in_threefold_repetition, validate_fen, ascii, turn, clear, put, get,
     remove, perft,
+
+    Game, Position, Move,
 
     moves: function(options) {
       /* The internal representation of a chess move is in 0x88 format, and
@@ -1889,22 +1881,9 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
 /* export Chess object if using node or any other CommonJS compatible
  * environment */
-if (typeof exports !== 'undefined') exports.Chess = Chess
+if (typeof exports !== 'undefined') exports.Chess = Chess;
 /* export Chess object for any RequireJS compatible environment */
 if (typeof define !== 'undefined')
   define(function() {
     return Chess
   })
-
-if (DEBUG) {
-  let pos = new ChessPosition();
-  console.log(
-    //new ChessMove("e2e8q").UCI
-    //new ChessGame({},[new ChessMove("e2e4")],"*")
-    //pos.moves({legal: false})
-    //.map(m => m.UCI)
-    pos.make_move(new ChessMove("a2a4")).fen
-  );
-}
-
-
