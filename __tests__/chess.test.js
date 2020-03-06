@@ -373,10 +373,14 @@ describe("Get/Put/Remove", function() {
 describe("FEN", function() {
 
   var positions = [
-    {fen: '8/8/8/8/8/8/8/8 w - - 0 1', should_pass: true},
+    {fen: '7k/8/8/8/8/8/8/7K w - - 0 1', should_pass: true},
     {fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', should_pass: true},
     {fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1', should_pass: true},
     {fen: '1nbqkbn1/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/1NBQKBN1 b - - 1 2', should_pass: true},
+
+    /* wrong number of kings */,
+    {fen: '8/8/8/8/8/8/8/8 w - - 0 1', should_pass: false},
+    {fen: 'k6k/8/8/8/8/8/8/K6K w - - 0 1', should_pass: false},
 
     /* incomplete FEN string */
     {fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBN w KQkq - 0 1', should_pass: false},

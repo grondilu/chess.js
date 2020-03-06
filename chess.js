@@ -209,6 +209,13 @@ function validate_fen(fen) {
     (tokens[3][1] == '6' && tokens[1] == 'b')
   ) throw ERRORS[10];
 
+  if (
+    [/k/g, /K/g]
+    .map(r => tokens[0].match(r))
+    .map(m => m ? m.length : 0)
+    .join() !== "1,1"
+  ) throw ERRORS[11];
+
 }
 
 class Move {
@@ -1887,3 +1894,5 @@ if (typeof define !== 'undefined')
   define(function() {
     return Chess
   })
+
+new Position('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1');
