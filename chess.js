@@ -28,19 +28,23 @@
 "use strict";
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
-  PAWN = 'p',
+  PAWN   = 'p',
   KNIGHT = 'n',
   BISHOP = 'b',
-  ROOK = 'r',
-  QUEEN = 'q',
-  KING = 'k',
+  ROOK   = 'r',
+  QUEEN  = 'q',
+  KING   = 'k',
 
   DEFAULT_POSITION =
   'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
 
   SYMBOLS = 'pnbrqkPNBRQK',
 
-  POSSIBLE_RESULTS = ['1-0', '0-1', '1/2-1/2', '*'],
+  WHITE_WINS       = '1-0',
+  BLACK_WINS       = '0-1',
+  DRAW             = '½-½',
+  UNDECIDED        = '*',
+  POSSIBLE_RESULTS = [WHITE_WINS, BLACK_WINS, DRAW, UNDECIDED],
 
   PAWN_OFFSETS = {
     b: [16, 32, 17, 15],
@@ -167,8 +171,7 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 function die(msg) { throw new Error(msg); }
 function is_digit(c) { return '0123456789'.indexOf(c) !== -1; }
 function algebraic(i) {
-  let f = file(i), r = rank(i);
-  return 'abcdefgh'.substring(f, f + 1) + '87654321'.substring(r, r + 1)
+  return 'abcdefgh'[file(i)] + '87654321'[rank(i)];
 }
 function rank(i) { return i >> 4; }
 function file(i) { return i & 15; }
@@ -207,6 +210,7 @@ function validate_fen(fen) {
     .join() !== "1,1"
   ) throw ERRORS[11];
 
+  return fen;
 }
 
 class Move {
@@ -266,6 +270,7 @@ class Position {
     this.move_number = parseInt(tokens[5], 10);
 
   }
+
   get fen() {
     let empty = 0, fen = '';
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
@@ -452,6 +457,7 @@ class Position {
 
     return legal_moves;
   }
+
   attacked(color, square) {
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
       /* did we run off the end of the board */
@@ -477,7 +483,7 @@ class Position {
         }
 
         /* if the piece is a knight or a king */
-        if (piece.type === 'n' || piece.type === 'k') return true;
+        if ([KNIGHT, KING].includes(piece.type)) return true;
 
         let offset = RAYS[index], j = i + offset,
           blocked = false;
@@ -538,8 +544,14 @@ class Position {
             break;
           case pawn_offsets[2]:
           case pawn_offsets[3]:
-            if (!board[move.to] && clone.ep_square !== move.to)
-              die("Illegal pawn capture");
+            if (
+              !board[move.to] &&
+              move.to == clone.ep_square
+            ) {
+              // EN PASSANT
+              board[clone.ep_square + PAWN_OFFSETS[swap_color(turn)][0]] = null;
+              clone.ep_square = EMPTY;
+            }
             break;
           default:
             die("Illegal pawn move");
@@ -551,13 +563,15 @@ class Position {
         if (board[move.to] && board[move.to].color === turn)
           die("destination square already occupied");
       } else {
-        let piece_offsets = PIECE_OFFSETS[piece.type],
-          piece_offset = piece_offsets.find(x => offset%x == 0 && offset/x > 0);
-        if (!piece_offset)
-          die("illegal piece displacement");
-        for (let o = piece_offset; o < offset; o+=piece_offset)
-          if (board[o])
-            die("blocked displacement");
+        let index = -offset + 119;
+        if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
+          for(
+            let ray = RAYS[index], j = move.from + ray;
+            j !== move.to;
+            j += ray
+          ) if (board[j]) 
+              die("blocked displacement");
+        } else die("wrong piece displacement");
       }
       if (board[move.to] && board[move.to].type == KING)
         die("destination square is occupied by a king");
@@ -566,6 +580,7 @@ class Position {
       if (turn === BLACK) clone.move_number++;
       if (board[move.to] && board[move.to].color !== turn)
         clone.half_moves = 0;
+
       clone.turn = swap_color(clone.turn);
       board[move.to] = board[move.from];
       board[move.from] = null;
@@ -1886,4 +1901,8 @@ if (typeof define !== 'undefined')
     return Chess
   })
 
-//new Position('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1');
+    /*
+console.log(
+new Position().make_move(new Move("a1a3")).fen
+);
+*/
