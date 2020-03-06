@@ -184,24 +184,15 @@ function validate_fen(fen) {
   let rows = tokens[0].split('/');
   if (rows.length !== 8) throw ERRORS[6];
 
-  for (let i = 0; i < rows.length; i++) {
-    /* check for right sum of fields AND not two numbers in succession */
-    let sum_fields = 0,
-      previous_was_number = false;
+  for (let row of rows) {
+    if (/[1-9][1-9]/.test(row)) throw ERRORS[7];
+    if (/[^1-9prnbqk]/i.test(row)) throw ERRORS[8];
+    /* check for right sum of fields */
+    let sum_fields = 0;
 
-    for (let k = 0; k < rows[i].length; k++) {
-      if (!isNaN(rows[i][k])) {
-        if (previous_was_number) throw ERRORS[7];
-        sum_fields += parseInt(rows[i][k], 10);
-        previous_was_number = true;
-      } else {
-        if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) throw ERRORS[8];
-        sum_fields += 1;
-        previous_was_number = false;
-      }
-    }
-    if (sum_fields !== 8) 
-      throw ERRORS[9];
+    for (let char of row) 
+      sum_fields += isNaN(char) ? 1 : parseInt(char, 10);
+    if (sum_fields !== 8) throw ERRORS[9];
   }
 
   if (
@@ -1895,4 +1886,4 @@ if (typeof define !== 'undefined')
     return Chess
   })
 
-new Position('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1');
+//new Position('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1');
