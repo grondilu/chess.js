@@ -26,6 +26,8 @@
  *----------------------------------------------------------------------------*/
 
 "use strict";
+
+// Constants
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
   PAWN   = 'p',
@@ -168,11 +170,10 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
     "Wrong number of kings"
   ].map(msg => new Error(msg));
 
+// Utility functions
 function die(msg) { throw new Error(msg); }
 function is_digit(c) { return '0123456789'.indexOf(c) !== -1; }
-function algebraic(i) {
-  return 'abcdefgh'[file(i)] + '87654321'[rank(i)];
-}
+function algebraic(i) { return 'abcdefgh'[file(i)] + '87654321'[rank(i)]; }
 function rank(i) { return i >> 4; }
 function file(i) { return i & 15; }
 function swap_color(c) { return c === WHITE ? BLACK : WHITE; }
@@ -192,7 +193,6 @@ function validate_fen(fen) {
     if (/[^1-9prnbqk]/i.test(row)) throw ERRORS[8];
     /* check for right sum of fields */
     let sum_fields = 0;
-
     for (let char of row) 
       sum_fields += isNaN(char) ? 1 : parseInt(char, 10);
     if (sum_fields !== 8) throw ERRORS[9];
@@ -212,6 +212,7 @@ function validate_fen(fen) {
 
   return fen;
 }
+
 
 class Move {
   constructor(move) {
@@ -270,6 +271,36 @@ class Position {
     this.move_number = parseInt(tokens[5], 10);
 
   }
+  ascii() {
+    let s = '   +------------------------+\n',
+      board = this.board;
+
+    for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
+      /* display the rank */
+      if (file(i) === 0) {
+        s += ' ' + '87654321'[rank(i)] + ' |';
+      }
+
+      /* empty piece */
+      if (board[i] == null) {
+        s += ' . ';
+      } else {
+        let piece = board[i].type,
+          color = board[i].color,
+          symbol = color === WHITE ? piece.toUpperCase() : piece.toLowerCase();
+        s += ' ' + symbol + ' ';
+      }
+
+      if ((i + 1) & 0x88) {
+        s += '|\n';
+        i += 8;
+      }
+    }
+    s += '   +------------------------+\n';
+    s += '     a  b  c  d  e  f  g  h\n';
+
+    return s;
+  }
 
   get fen() {
     let empty = 0, fen = '';
@@ -288,24 +319,18 @@ class Position {
       }
 
       if ((i + 1) & 0x88) {
-        if (empty > 0) {
-          fen += empty;
-        }
-
-        if (i !== SQUARES.h1) {
-          fen += '/';
-        }
-
+        if (empty > 0) fen += empty;
+        if (i !== SQUARES.h1) fen += '/';
         empty = 0;
         i += 8;
       }
     }
 
     let cflags = '';
-    if (this.castling[WHITE] & BITS.KSIDE_CASTLE) { cflags += 'K'; }
-    if (this.castling[WHITE] & BITS.QSIDE_CASTLE) { cflags += 'Q'; }
-    if (this.castling[BLACK] & BITS.KSIDE_CASTLE) { cflags += 'k'; }
-    if (this.castling[BLACK] & BITS.QSIDE_CASTLE) { cflags += 'q'; }
+    if (this.castling[WHITE] & BITS.KSIDE_CASTLE) cflags += 'K';
+    if (this.castling[WHITE] & BITS.QSIDE_CASTLE) cflags += 'Q';
+    if (this.castling[BLACK] & BITS.KSIDE_CASTLE) cflags += 'k';
+    if (this.castling[BLACK] & BITS.QSIDE_CASTLE) cflags += 'q';
 
     /* do we have an empty castling flag? */
     cflags = cflags || '-';
@@ -508,96 +533,178 @@ class Position {
   }
 
   make_move(move) {
-    if (move instanceof Move) {
-      let clone = this.clone,
-        turn     = clone.turn,
-        board    = clone.board,
-        castling = clone.castling,
-        kings    = clone.kings,
-        piece    = board[move.from],
-        offset   = move.to - move.from;
 
-      if (!piece) { die("Empty square"); }
-      else if (piece.type === PAWN) {
-        let pawn_offsets = PAWN_OFFSETS[turn];
-        switch (offset) {
-          case pawn_offsets[0]:
-            if (board[move.to])
-              die("Illegal single-square pawn move");
-            if (
-              (
-              (rank(move.to) === RANK_8 && turn === WHITE) ||
-              (rank(move.to) === RANK_1 && turn === BLACK)
-              ) && !move.promotion
-            ) die("promotion was expected");
-            break;
-          case pawn_offsets[1]:
-            let ep_square = move.from + pawn_offsets[0];
-            if (
-              !(
-                SECOND_RANK[turn] === rank(move.from) &&
-                board[ep_square] == null &&
-                board[move.to] == null
-              )
-            ) die("Illegal double-squared pawn move");
-            clone.ep_square = ep_square;
-            break;
-          case pawn_offsets[2]:
-          case pawn_offsets[3]:
-            if (
-              !board[move.to] &&
-              move.to == clone.ep_square
-            ) {
-              // EN PASSANT
-              board[clone.ep_square + PAWN_OFFSETS[swap_color(turn)][0]] = null;
-              clone.ep_square = EMPTY;
-            }
-            break;
-          default:
-            die("Illegal pawn move");
-        }
-        clone.half_moves = 0;
-      } else if (piece.type === 'k' || piece.type == 'n') {
-        if (!PIECE_OFFSETS[piece.type].includes(offset))
-          die("wrong move offset for " + (piece.type == 'k' ? "king" : "knight"));
-        if (board[move.to] && board[move.to].color === turn)
-          die("destination square already occupied");
-      } else {
-        let index = -offset + 119;
-        if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
-          for(
-            let ray = RAYS[index], j = move.from + ray;
-            j !== move.to;
-            j += ray
-          ) if (board[j]) 
-              die("blocked displacement");
-        } else die("wrong piece displacement");
-      }
-      if (board[move.to] && board[move.to].type == KING)
+    if (typeof move == "string")
+      return this.make_move(new Move(move));
+    else if (!(move instanceof Move))
+      die("wrong argument type");
+
+    let copy   = this.clone,
+      from     = move.from,
+      to       = move.to,
+      us       = copy.turn,
+      them     = swap_color(us),
+      board    = copy.board,
+      castling = copy.castling,
+      kings    = copy.kings,
+      piece    = board[move.from],
+      offset   = move.to - move.from;
+
+    if (board[to]) {
+      // Destination square is occupied
+      if (board[to].type == KING)
         die("destination square is occupied by a king");
-      if (board[move.to] && board[move.to].color == turn)
+      if (board[to].color == us)
         die("destination square is occupied by same color piece");
-      if (turn === BLACK) clone.move_number++;
-      if (board[move.to] && board[move.to].color !== turn)
-        clone.half_moves = 0;
+    }
+    if (!piece) die("no piece to move");
 
-      clone.turn = swap_color(clone.turn);
-      board[move.to] = board[move.from];
-      board[move.from] = null;
+    // Defaults
+    copy.ep_square = EMPTY;
+    copy.half_moves++;
 
-      if (move.promotion)
-        board[move.to].type = move.promotion;
+    // Moving a pawn
+    if (piece.type === PAWN) {
+      let pawn_offsets = PAWN_OFFSETS[us];
+      switch (offset) {
+        case pawn_offsets[0]:
+          if (board[to])
+            die("Illegal single-square pawn move");
+          if (
+            (
+              (rank(to) === RANK_8 && us === WHITE) ||
+              (rank(to) === RANK_1 && us === BLACK)
+            ) && !move.promotion
+          ) die("promotion was expected");
+          break;
+        case pawn_offsets[1]:
+          let ep_square = from + pawn_offsets[0];
+          if (
+            !(
+              SECOND_RANK[us] === rank(from) &&
+              board[ep_square] == null &&
+              board[to] == null
+            )
+          ) die("Illegal double-squared pawn move");
+          copy.ep_square = ep_square;
+          break;
+        case pawn_offsets[2]:
+        case pawn_offsets[3]:
+          if (
+            !board[to] &&
+            to == copy.ep_square
+          ) {
+            // EN PASSANT
+            board[copy.ep_square + PAWN_OFFSETS[swap_color(us)][0]] = null;
+            copy.ep_square = EMPTY;
+          }
+          break;
+        default:
+          die("Illegal pawn move");
+      }
+      copy.half_moves = 0;
+    } else 
+    // Moving a king or knight
+    if (piece.type === KNIGHT) {
+      if (!PIECE_OFFSETS[piece.type].includes(offset))
+        die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
+    } else if (piece.type === KING) {
+      // Moving the King
+      if (offset == 2 || offset == -2) {
+        // CASTLING
+        let direction = file(to) - file(from);
+        if (direction > 1 || direction < 1) {
+          if (direction > 0) {
+            // KING SIDE CASTLE
+            if (
+              board[from + 1] ||
+              board[to      ] ||
+              copy.attacked(them, from    ) ||
+              copy.attacked(them, from + 1) ||
+              copy.attacked(them, to)
+            ) die("illegal king-side castling");
+            board[to - 1] = board[to + 1];
+            board[to + 1] = null;
+          } else if (direction < 0) {
+            // QUEEN SIDE CASTLE
+            if (
+              board[castling_from - 1] ||
+              board[castling_from - 2] ||
+              board[castling_from - 3] ||
+              copy.attacked(them, kings[us]) ||
+              copy.attacked(them, castling_from - 1) ||
+              copy.attacked(them, castling_to)
+            ) die("illegal queen-side castling");
+            board[to + 1] = board[to - 2];
+            board[to - 2] = null;
+          }
+        }
+        // we moved the king, so let's remove castling privilege
+        if (!copy.castling[us])
+          copy.castling[us] |= BITS.KSIDE_CASTLE & BITS.QSIDE_CASTLE;
+        // update king's position record
+        copy.kings[us] = move.to;
+      } else if (!PIECE_OFFSETS[KING].includes(offset))
+        die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
+    }
 
-      if (this.check) die("check!");
-      return clone;
-    } else die("wrong argument type");
+    // Moving a bishop, rook or queen
+    else {
+      let index = -offset + 119;
+      if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
+        for(
+          let ray = RAYS[index], j = move.from + ray;
+          j !== move.to;
+          j += ray
+        ) if (board[j]) 
+          die("blocked displacement");
+      } else die("wrong piece displacement");
+    }
+
+    if (us === BLACK) copy.move_number++;
+    if (board[move.to] && board[move.to].color !== us)
+      copy.half_moves = 0;
+
+    if (move.promotion)
+      board[move.to] = { type: move.promotion, color: us };
+
+    /* turn off castling if we move a rook */
+    if (castling[us]) {
+      for (let rook of ROOKS[us]) {
+        if (
+          move.from === rook.square &&
+          castling[us] & rook.flag
+        ) castling[us] ^= rook.flag;
+      }
+    }
+
+    /* turn off castling if we capture a rook */
+    if (castling[them]) {
+      for (let rook of ROOKS[them]) {
+        if (
+          move.to === rook.square &&
+          castling[them] & rook.flag
+        ) {
+          castling[them] ^= rook.flag;
+          break;
+        }
+      }
+    }
+
+    board[move.to] = board[move.from];
+    board[move.from] = null;
+
+    if (copy.check) die("check!");
+    copy.turn = swap_color(copy.turn);
+
+    return copy;
+
 
   }
 
   get clone() { return new Position(this.fen); }
 
 }
-
 class Game {
   constructor(header, moves, adjudication = "*") {
     if (typeof header !== "object")
@@ -634,9 +741,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
     if (!keep_headers) header = {};
     update_setup(generate_fen());
   }
-
   function reset() { load(DEFAULT_POSITION); }
-
   function load(fen, keep_headers = false) {
     let tokens = fen.split(/\s+/),
       position = tokens[0],
@@ -675,7 +780,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return true;
   }
-
   function generate_fen() {
     let empty = 0, fen = '';
 
@@ -718,7 +822,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return [fen, turn, cflags, epflags, half_moves, move_number].join(' ')
   }
-
   function set_header(args) {
     for (let i = 0; i < args.length; i += 2) {
       if (typeof args[i] === 'string' && typeof args[i + 1] === 'string') {
@@ -727,14 +830,13 @@ var Chess = function(fen = DEFAULT_POSITION) {
     }
     return header;
   }
-
-  /* called when the initial board setup is changed with put() or remove().
-   * modifies the SetUp and FEN properties of the header object.  if the FEN is
-   * equal to the default position, the SetUp and FEN are deleted
-   * the setup is only updated if history.length is zero, ie moves haven't been
-   * made.
-   */
   function update_setup(fen) {
+    /* called when the initial board setup is changed with put() or remove().
+     * modifies the SetUp and FEN properties of the header object.  if the FEN is
+     * equal to the default position, the SetUp and FEN are deleted
+     * the setup is only updated if history.length is zero, ie moves haven't been
+     * made.
+     */
     if (history.length > 0) return;
 
     if (fen !== DEFAULT_POSITION) {
@@ -745,12 +847,10 @@ var Chess = function(fen = DEFAULT_POSITION) {
       delete header['FEN'];
     }
   }
-
   function get(square) {
     let piece = board[SQUARES[square]];
     return piece ? { type: piece.type, color: piece.color } : null;
   }
-
   function put(piece, square) {
     /* check for valid piece object */
     if (!('type' in piece && 'color' in piece)) return false;
@@ -776,7 +876,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return true;
   }
-
   function remove(square) {
     let piece = get(square);
     board[SQUARES[square]] = null;
@@ -787,7 +886,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return piece;
   }
-
   function build_move(board, from, to, flags, promotion) {
     let move = {
       color: turn,
@@ -807,7 +905,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
     }
     return move;
   }
-
   function generate_moves(options) {
     function add_move(board, moves, from, to, flags) {
       /* if pawn promotion */
@@ -956,18 +1053,17 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return legal_moves
   }
-
-  /* convert a move from 0x88 coordinates to Standard Algebraic Notation
-   * (SAN)
-   *
-   * @param {boolean} sloppy Use the sloppy SAN generator to work around over
-   * disambiguation bugs in Fritz and Chessbase.  See below:
-   *
-   * r1bqkbnr/ppp2ppp/2n5/1B1pP3/4P3/8/PPPP2PP/RNBQK1NR b KQkq - 2 4
-   * 4. ... Nge7 is overly disambiguated because the knight on c6 is pinned
-   * 4. ... Ne7 is technically the valid SAN
-   */
   function move_to_san(move, sloppy) {
+    /* convert a move from 0x88 coordinates to Standard Algebraic Notation
+     * (SAN)
+     *
+     * @param {boolean} sloppy Use the sloppy SAN generator to work around over
+     * disambiguation bugs in Fritz and Chessbase.  See below:
+     *
+     * r1bqkbnr/ppp2ppp/2n5/1B1pP3/4P3/8/PPPP2PP/RNBQK1NR b KQkq - 2 4
+     * 4. ... Nge7 is overly disambiguated because the knight on c6 is pinned
+     * 4. ... Ne7 is technically the valid SAN
+     */
     let output = '';
 
     if (move.flags & BITS.KSIDE_CASTLE) {
@@ -1007,12 +1103,10 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return output;
   }
-
-  // parses all of the decorators out of a SAN string
   function stripped_san(move) {
+    // parses all of the decorators out of a SAN string
     return move.replace(/=/, '').replace(/[+#]?[?!]*$/, '');
   }
-
   function attacked(color, square) {
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
       /* did we run off the end of the board */
@@ -1058,23 +1152,18 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return false;
   }
-
   function king_attacked(color) {
     return attacked(swap_color(color), kings[color]);
   }
-
   function in_check() {
     return king_attacked(turn);
   }
-
   function in_checkmate() {
     return in_check() && generate_moves().length === 0;
   }
-
   function in_stalemate() {
     return !in_check() && generate_moves().length === 0;
   }
-
   function insufficient_material() {
     let pieces = {},
       bishops = [],
@@ -1116,7 +1205,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return false;
   }
-
   function in_threefold_repetition() {
     /* TODO: while this function is fine for casual use, a better
      * implementation would use a Zobrist key (instead of FEN). the
@@ -1151,7 +1239,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return repetition;
   }
-
   function push(move) {
     history.push({
       move,
@@ -1163,10 +1250,9 @@ var Chess = function(fen = DEFAULT_POSITION) {
       move_number
     })
   }
-
   function make_move(move) {
     let us = turn,
-    them = swap_color(us);
+      them = swap_color(us);
     push(move);
 
     board[move.to] = board[move.from];
@@ -1252,7 +1338,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
     }
     turn = swap_color(turn)
   }
-
   function undo_move() {
     var old = history.pop();
     if (old == null) return null;
@@ -1300,18 +1385,17 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return move;
   }
-
-  /* this function is used to uniquely identify ambiguous moves */
   function get_disambiguator(move, sloppy) {
+    /* this function is used to uniquely identify ambiguous moves */
     let moves = generate_moves({ legal: !sloppy }),
 
-    from = move.from,
-    to = move.to,
-    piece = move.piece,
+      from = move.from,
+      to = move.to,
+      piece = move.piece,
 
-    ambiguities = 0,
-    same_rank = 0,
-    same_file = 0;
+      ambiguities = 0,
+      same_rank = 0,
+      same_file = 0;
 
     for (let move of moves) {
       let ambig_from = move.from,
@@ -1348,7 +1432,6 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return '';
   }
-
   function ascii() {
     let s = '   +------------------------+\n'
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
@@ -1377,9 +1460,9 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return s;
   }
-
-  // convert a move from Standard Algebraic Notation (SAN) to 0x88 coordinates
   function move_from_san(move, sloppy) {
+    // convert a move from Standard Algebraic Notation (SAN) to 0x88 coordinates
+
     // strip off any move decorations: e.g Nf3+?!
     let clean_move = stripped_san(move);
 
@@ -1420,10 +1503,8 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
     return null;
   }
-
-  /*****************************************************************************
-   * UTILITY FUNCTIONS
-   ****************************************************************************/
+  // UTILITY FUNCTIONS
+  //
   function rank(i) { return i >> 4; }
   function file(i) { return i & 15; }
 
@@ -1470,9 +1551,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
 
   function trim(str) { return str.replace(/^\s+|\s+$/g, ''); }
 
-  /*****************************************************************************
-   * DEBUGGING UTILITIES
-   ****************************************************************************/
+  // DEBUGGING UTILITIES
   function perft(depth) {
     let moves = generate_moves({ legal: false }),
       nodes = 0,
@@ -1554,16 +1633,16 @@ var Chess = function(fen = DEFAULT_POSITION) {
       return moves;
     },
     in_draw: () =>
-        half_moves >= 100 ||
-        in_stalemate() ||
-        insufficient_material() ||
-        in_threefold_repetition(),
+    half_moves >= 100 ||
+    in_stalemate() ||
+    insufficient_material() ||
+    in_threefold_repetition(),
     game_over: () =>
-        half_moves >= 100 ||
-        in_checkmate() ||
-        in_stalemate() ||
-        insufficient_material() ||
-        in_threefold_repetition(),
+    half_moves >= 100 ||
+    in_checkmate() ||
+    in_stalemate() ||
+    insufficient_material() ||
+    in_threefold_repetition(),
     fen: () => generate_fen(),
     board: function() {
       let output = [],
@@ -1823,7 +1902,7 @@ var Chess = function(fen = DEFAULT_POSITION) {
         ? options.sloppy
         : false,
 
-      move_obj = null;
+        move_obj = null;
 
       if (typeof move === 'string') {
         move_obj = move_from_san(move, sloppy);
@@ -1869,8 +1948,8 @@ var Chess = function(fen = DEFAULT_POSITION) {
     },
     history: function(options) {
       let reversed_history = [],
-      move_history = [],
-      verbose =
+        move_history = [],
+        verbose =
         typeof options !== 'undefined' &&
         'verbose' in options &&
         options.verbose;
@@ -1902,7 +1981,19 @@ if (typeof define !== 'undefined')
   })
 
     /*
-console.log(
-new Position().make_move(new Move("a1a3")).fen
-);
+let pos = 
+  [
+    new Position(),
+    "e2e4", "e7e5",
+    "g1f3", "b8c6",
+    "f1b5", "g8f6",
+    "e1g1"
+  ]
+  .reduce(
+    (p, m) => p.make_move(m)
+  );
+
+console.log(pos.ascii());
+console.log(pos.fen);
 */
+
