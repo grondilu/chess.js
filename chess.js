@@ -25,6 +25,8 @@
  *
  *----------------------------------------------------------------------------*/
 
+// TODO: fix check function
+//
 "use strict";
 
 // Constants
@@ -187,7 +189,6 @@ function validate_fen(fen) {
   if (!/^(w|b)$/.test(tokens[1])) throw ERRORS[5];
   let rows = tokens[0].split('/');
   if (rows.length !== 8) throw ERRORS[6];
-
   for (let row of rows) {
     if (/[1-9][1-9]/.test(row)) throw ERRORS[7];
     if (/[^1-9prnbqk]/i.test(row)) throw ERRORS[8];
@@ -197,20 +198,16 @@ function validate_fen(fen) {
       sum_fields += isNaN(char) ? 1 : parseInt(char, 10);
     if (sum_fields !== 8) throw ERRORS[9];
   }
-
   if (
     (tokens[3][1] == '3' && tokens[1] == 'w') ||
     (tokens[3][1] == '6' && tokens[1] == 'b')
   ) throw ERRORS[10];
-
   if (
     [/k/g, /K/g]
     .map(r => tokens[0].match(r))
     .map(m => m ? m.length : 0)
     .join() !== "1,1"
   ) throw ERRORS[11];
-
-  return fen;
 }
 
 
@@ -498,6 +495,7 @@ class Position {
         index = difference + 119;
 
       if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
+        console.log("attacked?", difference, piece.type, piece.color);
         if (piece.type === PAWN) {
           if (difference > 0) {
             if (piece.color === WHITE) return true;
@@ -546,9 +544,11 @@ class Position {
       them     = swap_color(us),
       board    = copy.board,
       castling = copy.castling,
+      ep_square = copy.ep_square,
       kings    = copy.kings,
       piece    = board[move.from],
-      offset   = move.to - move.from;
+      offset   = move.to - move.from,
+      san      = copy.move_number + (us === BLACK ? '...' : '.');
 
     if (board[to]) {
       // Destination square is occupied
@@ -576,27 +576,30 @@ class Position {
               (rank(to) === RANK_1 && us === BLACK)
             ) && !move.promotion
           ) die("promotion was expected");
+          san += algebraic(to);
           break;
         case pawn_offsets[1]:
-          let ep_square = from + pawn_offsets[0];
+          let new_ep_square = from + pawn_offsets[0];
           if (
             !(
               SECOND_RANK[us] === rank(from) &&
-              board[ep_square] == null &&
+              board[new_ep_square] == null &&
               board[to] == null
             )
           ) die("Illegal double-squared pawn move");
-          copy.ep_square = ep_square;
+          copy.ep_square = new_ep_square;
+          san += algebraic(to);
           break;
         case pawn_offsets[2]:
         case pawn_offsets[3]:
-          if (
-            !board[to] &&
-            to == copy.ep_square
-          ) {
-            // EN PASSANT
-            board[copy.ep_square + PAWN_OFFSETS[swap_color(us)][0]] = null;
-            copy.ep_square = EMPTY;
+          san += 'abcdefgh'[file(from)] + 'x' + algebraic(to);
+          if (!board[to])
+          {
+            if (to == ep_square) {
+              // EN PASSANT
+              board[ep_square + PAWN_OFFSETS[swap_color(us)][0]] = null;
+              san += 'ep';
+            } else die("no piece to capture");
           }
           break;
         default:
@@ -604,12 +607,16 @@ class Position {
       }
       copy.half_moves = 0;
     } else 
-    // Moving a king or knight
+    // Moving a knight
     if (piece.type === KNIGHT) {
       if (!PIECE_OFFSETS[piece.type].includes(offset))
-        die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
-    } else if (piece.type === KING) {
-      // Moving the King
+        die("wrong move offset for knight");
+      san += 'N';
+      if (board[to]) san += 'x';
+      san += algebraic(to);
+    }
+    // Moving the King
+    else if (piece.type === KING) {
       if (offset == 2 || offset == -2) {
         // CASTLING
         let direction = file(to) - file(from);
@@ -625,6 +632,7 @@ class Position {
             ) die("illegal king-side castling");
             board[to - 1] = board[to + 1];
             board[to + 1] = null;
+            san += '0-0';
           } else if (direction < 0) {
             // QUEEN SIDE CASTLE
             if (
@@ -637,6 +645,7 @@ class Position {
             ) die("illegal queen-side castling");
             board[to + 1] = board[to - 2];
             board[to - 2] = null;
+            san += '0-0-0';
           }
         }
         // we moved the king, so let's remove castling privilege
@@ -646,10 +655,15 @@ class Position {
         copy.kings[us] = move.to;
       } else if (!PIECE_OFFSETS[KING].includes(offset))
         die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
+      san += 'K'
+      if (board[to]) san += 'x';
+      san += algebraic(to);
     }
-
     // Moving a bishop, rook or queen
     else {
+      san += piece.type.toUpperCase();
+      if (board[to]) san += 'x';
+      san += algebraic(to);
       let index = -offset + 119;
       if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
         for(
@@ -665,8 +679,10 @@ class Position {
     if (board[move.to] && board[move.to].color !== us)
       copy.half_moves = 0;
 
-    if (move.promotion)
+    if (move.promotion) {
       board[move.to] = { type: move.promotion, color: us };
+      san += move.promotion;
+    }
 
     /* turn off castling if we move a rook */
     if (castling[us]) {
@@ -691,14 +707,16 @@ class Position {
       }
     }
 
-    board[move.to] = board[move.from];
-    board[move.from] = null;
+    board[to] = board[from];
+    board[from] = null;
 
     if (copy.check) die("check!");
     copy.turn = swap_color(copy.turn);
+    if (copy.check) san += '+';
+
+    copy.last_move = san;
 
     return copy;
-
 
   }
 
