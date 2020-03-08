@@ -169,7 +169,7 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
     "1st field (piece positions) is invalid [invalid piece].",              // 8
     "1st field (piece positions) is invalid [row too large].",              // 9
     "Illegal en-passant square",                                           // 10
-    "Wrong number of kings"
+    "Wrong number of kings"                                                // 11
   ].map(msg => new Error(msg));
 
 // Utility functions
@@ -210,26 +210,6 @@ function validate_fen(fen) {
   ) throw ERRORS[11];
 }
 
-
-class Move {
-  constructor(move) {
-    let match = move.match(
-      /([a-h][1-8])([a-h][1-8])([qrbnQRBN])?/
-    );
-    if (match) {
-      this.from = SQUARES[match[1]];
-      this.to   = SQUARES[match[2]];
-      if (match[3]) this.promotion = match[3];
-      if (this.from == this.to) die("degenerate move");
-      if (this.promotion && !(rank(this.to) == 7 || rank(this.to) == 0))
-        die("wrong destination rank for a promotion");
-    } else die("wrong move syntax");
-  }
-  get UCI() {
-    return algebraic(this.from) + algebraic(this.to) +
-      (this.promotion || '');
-  }
-}
 class Position {
   constructor(fen = DEFAULT_POSITION) {
     validate_fen(fen);
@@ -336,151 +316,7 @@ class Position {
     return [fen, this.turn, cflags, epflags, this.half_moves, this.move_number].join(' ')
   }
 
-  moves(options) {
-    let color = this.turn, board = this.board,
-      moves = [],
-      us = this.turn,
-      them = swap_color(us),
-
-      first_sq = SQUARES.a8,
-      last_sq = SQUARES.h1,
-      single_square = false,
-
-      /* do we want legal moves? */
-      legal =
-      typeof options !== 'undefined' && 'legal' in options
-      ? options.legal
-      : true;
-    function add_move(from, to) {
-      if (
-        board[from].type === PAWN &&
-        (rank(to) === RANK_8 || rank(to) === RANK_1)
-      ) {
-        /* pawn promotion */
-        for (let piece of [QUEEN, ROOK, BISHOP, KNIGHT])
-          moves.push(new Move(algebraic(from)+algebraic(to)+piece));
-      } else {
-        moves.push(new Move(algebraic(from)+algebraic(to)));
-      }
-    }
-
-    /* are we generating moves for a single square? */
-    if (typeof options !== 'undefined' && 'square' in options) {
-      if (options.square in SQUARES) {
-        first_sq = last_sq = SQUARES[options.square];
-        single_square = true;
-      } else {
-        /* invalid square */
-        return [];
-      }
-    }
-
-    for (let i = first_sq; i <= last_sq; i++) {
-      /* did we run off the end of the board ? */
-      if (i & 0x88) { i += 7; continue; }
-
-      let piece = this.board[i];
-      if (piece == null || piece.color !== us) continue;
-
-      if (piece.type === PAWN) {
-        /* single square, non-capturing */
-        let square = i + PAWN_OFFSETS[us][0];
-        if (board[square] == null) {
-          add_move(i, square);
-
-          /* double square */
-          square = i + PAWN_OFFSETS[us][1];
-          if (SECOND_RANK[us] === rank(i) && this.board[square] == null) {
-            add_move(i, square);
-          }
-        }
-
-        /* pawn captures */
-        for (let j = 2; j < 4; j++) {
-          let square = i + PAWN_OFFSETS[us][j];
-          if (square & 0x88) continue
-
-          if (this.board[square] != null && this.board[square].color === them) {
-            add_move(i, square);
-          } else if (square === this.ep_square) {
-            add_move(i, ep_square);
-          }
-        }
-      } else {
-        for (let j = 0, len = PIECE_OFFSETS[piece.type].length; j < len; j++) {
-          let offset = PIECE_OFFSETS[piece.type][j],
-            square = i;
-
-          while (true) {
-            square += offset;
-            if (square & 0x88) break;
-
-            if (this.board[square] == null) {
-              add_move(i, square);
-            } else {
-              if (this.board[square].color === us) break;
-              add_move(i, square);
-              break;
-            }
-
-            /* break, if knight or king */
-            if (piece.type === 'n' || piece.type === 'k') break;
-          }
-        }
-      }
-    }
-
-    /* check for castling if: a) we're generating all moves, or b) we're doing
-     * single square move generation on the king's square
-     */
-    if (!single_square || last_sq === this.kings[us]) {
-      /* king-side castling */
-      if (this.castling[us] & BITS.KSIDE_CASTLE) {
-        let castling_from = this.kings[us],
-          castling_to = castling_from + 2;
-
-        if (
-          this.board[castling_from + 1] == null &&
-          this.board[castling_to] == null &&
-          !this.attacked(them, castling_from) &&
-          !this.attacked(them, castling_from + 1) &&
-          !this.attacked(them, castling_to)
-        ) add_move(castling_from, castling_to);
-      }
-
-      /* queen-side castling */
-      if (this.castling[us] & BITS.QSIDE_CASTLE) {
-        let castling_from = this.kings[us],
-          castling_to = castling_from - 2;
-
-        if (
-          this.board[castling_from - 1] == null &&
-          this.board[castling_from - 2] == null &&
-          this.board[castling_from - 3] == null &&
-          !this.attacked(them, castling_from) &&
-          !this.attacked(them, castling_from - 1) &&
-          !this.attacked(them, castling_to)
-        ) add_move(castling_from, castling_to);
-      }
-    }
-
-    /* return all pseudo-legal moves (this includes moves that allow the king
-     * to be captured)
-     */
-    if (!legal) return moves;
-
-    /* filter out illegal moves */
-    let legal_moves = [];
-    for (let move of moves) {
-      try { this.make_move(move); }
-      catch (err) { continue; }
-      legal_moves.push(move);
-    }
-
-    return legal_moves;
-  }
-
-  attacked(color, square) {
+  attacked(square) {
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
       /* did we run off the end of the board */
       if (i & 0x88) {
@@ -488,14 +324,13 @@ class Position {
         continue;
       }
 
-      /* if empty square or wrong color */
-      if (this.board[i] == null || this.board[i].color !== color) continue;
-
       let piece = this.board[i], difference = i - square,
         index = difference + 119;
 
+      /* if empty square or wrong color */
+      if (piece == null || piece.color !== this.turn) continue;
+
       if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
-        console.log("attacked?", difference, piece.type, piece.color);
         if (piece.type === PAWN) {
           if (difference > 0) {
             if (piece.color === WHITE) return true;
@@ -525,9 +360,11 @@ class Position {
 
     return false;
   }
-  get check() { return this.king_attacked(this.turn); }
-  king_attacked(color) {
-    return this.attacked(swap_color(color), this.kings[color]);
+
+  get check() {
+    let copy = this.clone;
+    copy.turn = swap_color(copy.turn);
+    return copy.attacked(copy.kings[this.turn]);
   }
 
   make_move(move) {
@@ -548,7 +385,7 @@ class Position {
       kings    = copy.kings,
       piece    = board[move.from],
       offset   = move.to - move.from,
-      san      = copy.move_number + (us === BLACK ? '...' : '.');
+      san;
 
     if (board[to]) {
       // Destination square is occupied
@@ -576,7 +413,7 @@ class Position {
               (rank(to) === RANK_1 && us === BLACK)
             ) && !move.promotion
           ) die("promotion was expected");
-          san += algebraic(to);
+          san = algebraic(to);
           break;
         case pawn_offsets[1]:
           let new_ep_square = from + pawn_offsets[0];
@@ -588,11 +425,11 @@ class Position {
             )
           ) die("Illegal double-squared pawn move");
           copy.ep_square = new_ep_square;
-          san += algebraic(to);
+          san = algebraic(to);
           break;
         case pawn_offsets[2]:
         case pawn_offsets[3]:
-          san += 'abcdefgh'[file(from)] + 'x' + algebraic(to);
+          san = 'abcdefgh'[file(from)] + 'x' + algebraic(to);
           if (!board[to])
           {
             if (to == ep_square) {
@@ -611,7 +448,7 @@ class Position {
     if (piece.type === KNIGHT) {
       if (!PIECE_OFFSETS[piece.type].includes(offset))
         die("wrong move offset for knight");
-      san += 'N';
+      san = 'N';
       if (board[to]) san += 'x';
       san += algebraic(to);
     }
@@ -632,20 +469,20 @@ class Position {
             ) die("illegal king-side castling");
             board[to - 1] = board[to + 1];
             board[to + 1] = null;
-            san += '0-0';
+            san = '0-0';
           } else if (direction < 0) {
             // QUEEN SIDE CASTLE
             if (
-              board[castling_from - 1] ||
-              board[castling_from - 2] ||
-              board[castling_from - 3] ||
-              copy.attacked(them, kings[us]) ||
-              copy.attacked(them, castling_from - 1) ||
-              copy.attacked(them, castling_to)
+              board[from - 1] ||
+              board[from - 2] ||
+              board[from - 3] ||
+              copy.attacked(them, from) ||
+              copy.attacked(them, from - 1) ||
+              copy.attacked(them, to)
             ) die("illegal queen-side castling");
             board[to + 1] = board[to - 2];
             board[to - 2] = null;
-            san += '0-0-0';
+            san = '0-0-0';
           }
         }
         // we moved the king, so let's remove castling privilege
@@ -655,13 +492,15 @@ class Position {
         copy.kings[us] = move.to;
       } else if (!PIECE_OFFSETS[KING].includes(offset))
         die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
-      san += 'K'
-      if (board[to]) san += 'x';
-      san += algebraic(to);
+      if (!san) {
+        san += 'K'
+        if (board[to]) san += 'x';
+        san += algebraic(to);
+      }
     }
     // Moving a bishop, rook or queen
     else {
-      san += piece.type.toUpperCase();
+      san = piece.type.toUpperCase();
       if (board[to]) san += 'x';
       san += algebraic(to);
       let index = -offset + 119;
@@ -710,11 +549,11 @@ class Position {
     board[to] = board[from];
     board[from] = null;
 
-    if (copy.check) die("check!");
+    //if (copy.check) die("check!");
     copy.turn = swap_color(copy.turn);
-    if (copy.check) san += '+';
+    //if (copy.check) san += '+';
 
-    copy.last_move = san;
+    copy.last_move = copy.move_number + (us === BLACK ? '...' : '.') + san;
 
     return copy;
 
@@ -722,6 +561,25 @@ class Position {
 
   get clone() { return new Position(this.fen); }
 
+}
+class Move {
+  constructor(move) {
+    let match = move.match(
+      /([a-h][1-8])([a-h][1-8])([qrbnQRBN])?/
+    );
+    if (match) {
+      this.from = SQUARES[match[1]];
+      this.to   = SQUARES[match[2]];
+      if (match[3]) this.promotion = match[3];
+      if (this.from == this.to) die("degenerate move");
+      if (this.promotion && !(rank(this.to) == 7 || rank(this.to) == 0))
+        die("wrong destination rank for a promotion");
+    } else die("wrong move syntax");
+  }
+  get UCI() {
+    return algebraic(this.from) + algebraic(this.to) +
+      (this.promotion || '');
+  }
 }
 class Game {
   constructor(header, moves, adjudication = "*") {
