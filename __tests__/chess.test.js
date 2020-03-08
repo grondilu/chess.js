@@ -1419,26 +1419,3 @@ describe('Regression Tests', function() {
   })
 });
 
-describe("Chess.Position", function () {
-  let chess = new Chess(),
-    pos = new chess.Position();
-
-  it('starting position returns expected FEN',
-    () => expect(pos.fen).toBe(chess.DEFAULT_POSITION)
-  );
-  let moves = pos.moves({legal: false});
-  it('starting position has 20 possible moves',
-    () => expect(moves.length).toBe(20)
-  );
-  it('move from empty square should throw an exception',
-    () => expect(() => pos.make_move(new chess.Move("e3e4"))).toThrow()
-  );
-  for (let move of moves)
-    it('move ' + move.UCI + ' can be played',
-      () => expect(() => pos.make_move(move)).not.toThrow()
-    );
-
-
-}
-);
-
