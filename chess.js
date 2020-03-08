@@ -25,12 +25,30 @@
  *
  *----------------------------------------------------------------------------*/
 
-// TODO: fix check function
+// TODO: do not set en-passant square in PGN when en-passant is not possible
 //
 "use strict";
 
 // Constants
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
+
+  OPENING_NAMES = {
+    "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2": "King's pawn opening",
+    "rnbqkbnr/ppp2ppp/4p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq - 0 3": "French defense, advance variation",
+    "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2": "Sicilian defense",
+    "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq d6 0 2": "Queen's pawn opening",
+    "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq c3 0 1":   "English opening",
+    "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1":    "Zukertort (aka Reti) opening",
+    "rnbqkbnr/pppppppp/8/8/8/6P1/PPPPPP1P/RNBQKBNR b KQkq - 0 1": "Hungarian opening",
+    "rnbqkbnr/pppppppp/8/8/8/1P6/P1PPPPPP/RNBQKBNR b KQkq - 0 1": "Nimzo-Larsen Attack",
+    "rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/2N5/PPP2PPP/R1BQKBNR b KQkq - 1 3": "French defense, Paulsen variation",
+    "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3": "Ruy Lopez",
+    "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3": "Italian game",
+    "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4": "Italian game, two knights defense",
+    "r1bqkb1r/pppp1ppp/2n2n2/4p1N1/2B1P3/8/PPPP1PPP/RNBQK2R b KQkq - 5 4": "Italian game, two knights defense, knight attack",
+    "r1bqkb1r/p1p2ppp/2n2n2/1p1Pp1N1/2B5/8/PPPP1PPP/RNBQK2R w KQkq - 0 6": "Italian game, two knights defense, Ulvestad variation",
+    "rnbqkbnr/pppppppp/8/8/6P1/8/PPPPPP1P/RNBQKBNR b KQkq g3 0 1": "Grob opening",
+  },
 
   PAWN   = 'p',
   KNIGHT = 'n',
@@ -316,6 +334,23 @@ class Position {
     return [fen, this.turn, cflags, epflags, this.half_moves, this.move_number].join(' ')
   }
 
+  attacking(square) {
+    let attacks = [];
+    for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
+      /* did we run off the end of the board */
+      if (i & 0x88) { i += 7; continue; }
+      let piece = this.board[i], difference = i - square,
+        index = difference + 119;
+      if (piece && piece.color == this.turn) {
+        try {
+          this.make_move(algebraic(i) + algebraic(square));
+        } catch (err) { continue; }
+        attacks.push(i);
+      }
+    }
+    return attacks;
+  }
+
   attacked(square) {
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
       /* did we run off the end of the board */
@@ -362,7 +397,7 @@ class Position {
   }
 
   get check() {
-    let copy = this.clone;
+    let copy = new Position(this.fen.replace(/ [a-h][36] /, ' - '));
     copy.turn = swap_color(copy.turn);
     return copy.attacked(copy.kings[this.turn]);
   }
@@ -549,11 +584,11 @@ class Position {
     board[to] = board[from];
     board[from] = null;
 
-    //if (copy.check) die("check!");
+    if (copy.check) die("check!");
     copy.turn = swap_color(copy.turn);
-    //if (copy.check) san += '+';
+    if (copy.check) san += '+';
 
-    copy.last_move = copy.move_number + (us === BLACK ? '...' : '.') + san;
+    copy.last_move = san;
 
     return copy;
 
@@ -582,18 +617,32 @@ class Move {
   }
 }
 class Game {
-  constructor(header, moves, adjudication = "*") {
-    if (typeof header !== "object")
-      die("wrong header type");
-    if (typeof moves == "array" && moves.every(x => x instanceof Move))
+  constructor(header, ...moves) {
+    if (!moves.every(x => /[a-h][1-8][a-h][1-8][nbrq]?/.test(x)))
       die("wrong moves type");
-    if (!(POSSIBLE_RESULTS.includes(adjudication)))
-      die("wrong adjudictation type");
-    this.header = header;
+    if (typeof header !== "object") die("wrong header type");
+    if (
+      header.adjudication &&
+      !(POSSIBLE_RESULTS.includes(header.adjudication))
+    ) die("wrong adjudictation type");
+    this.header = {}; for (let key in header) this.header[key] = header[key];
+
+    let pgn = '';
+    [ new Position(), ...moves ]
+      .reduce(
+        (a,b) => {
+          let newpos = a.make_move(b),
+            tmpname = OPENING_NAMES[newpos.fen];
+          if (tmpname) this.header.opening_name = tmpname;
+          if (a.turn === WHITE)
+            pgn += a.move_number + '.';
+          pgn += newpos.last_move + ' ';
+          return newpos;
+        }
+      );
+    if (header.adjudication) pgn += header.adjudication;
+    this.pgn = pgn.trim();
     this.moves = moves;
-    this.adjudication = adjudication;
-  }
-  get pgn() {
   }
 }
 
