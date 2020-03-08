@@ -26,6 +26,7 @@
  *----------------------------------------------------------------------------*/
 
 // TODO: do not set en-passant square in PGN when en-passant is not possible
+// TODO: check promotion mechanism
 //
 "use strict";
 
@@ -189,6 +190,7 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
     "Illegal en-passant square",                                           // 10
     "Wrong number of kings",                                               // 11
     "check!",                                                              // 12
+    "attempt to capture the opponent's king",                              // 13
   ].map(msg => new Error(msg));
 
 // Utility functions
@@ -198,7 +200,7 @@ function algebraic(i) { return 'abcdefgh'[file(i)] + '87654321'[rank(i)]; }
 function rank(i) { return i >> 4; }
 function file(i) { return i & 15; }
 function swap_color(c) { return c === WHITE ? BLACK : WHITE; }
-function validate_fen(fen) {
+function validate_fen(fen, allow_missing_king = false) {
   let tokens = fen.split(/\s+/);
   if (tokens.length !== 6) throw ERRORS[0];
   if (isNaN(tokens[5]) || parseInt(tokens[5], 10) <= 0) throw ERRORS[1];
@@ -222,6 +224,7 @@ function validate_fen(fen) {
     (tokens[3][1] == '6' && tokens[1] == 'b')
   ) throw ERRORS[10];
   if (
+    !allow_missing_king &&
     [/k/g, /K/g]
     .map(r => tokens[0].match(r))
     .map(m => m ? m.length : 0)
@@ -230,8 +233,8 @@ function validate_fen(fen) {
 }
 
 class Position {
-  constructor(fen = DEFAULT_POSITION) {
-    validate_fen(fen);
+  constructor(fen = DEFAULT_POSITION, allow_missing_king = false) {
+    validate_fen(fen, allow_missing_king);
     this.board = new Array(128);
     this.kings = { w: EMPTY, b: EMPTY };
     this.castling = { w: 0, b: 0 };
@@ -267,7 +270,7 @@ class Position {
     this.move_number = parseInt(tokens[5], 10);
 
   }
-  ascii() {
+  get ascii() {
     let s = '   +------------------------+\n',
       board = this.board;
 
@@ -344,7 +347,7 @@ class Position {
         index = difference + 119;
       if (piece && piece.color == this.turn) {
         try {
-          this.make_move(algebraic(i) + algebraic(square));
+          this.make_move(algebraic(i) + algebraic(square), true);
         } catch (err) { continue; }
         attacks.push(i);
       }
@@ -352,58 +355,27 @@ class Position {
     return attacks;
   }
 
-  attacked(square) {
+  get legal_moves() {
+    let moves = [];
     for (let i = SQUARES.a8; i <= SQUARES.h1; i++) {
       /* did we run off the end of the board */
-      if (i & 0x88) {
-        i += 7;
-        continue;
-      }
-
-      let piece = this.board[i], difference = i - square,
-        index = difference + 119;
-
-      /* if empty square or wrong color */
-      if (piece == null || piece.color !== this.turn) continue;
-
-      if (ATTACKS[index] & (1 << SHIFTS[piece.type])) {
-        if (piece.type === PAWN) {
-          if (difference > 0) {
-            if (piece.color === WHITE) return true;
-          } else {
-            if (piece.color === BLACK) return true;
-          }
-          continue;
-        }
-
-        /* if the piece is a knight or a king */
-        if ([KNIGHT, KING].includes(piece.type)) return true;
-
-        let offset = RAYS[index], j = i + offset,
-          blocked = false;
-
-        while (j !== square) {
-          if (this.board[j] != null) {
-            blocked = true;
-            break;
-          }
-          j += offset;
-        }
-
-        if (!blocked) return true;
-      }
+      if (i & 0x88) { i += 7; continue; }
+      let attacks = this.attacking(i),
+        square = algebraic(i);
+      if (attacks) moves.push(
+        ...attacks.map(x => algebraic(x) + square)
+      );
     }
-
-    return false;
+    return moves;
+  }
+  get stalemate() {
+    return this.legal_moves.length == 0;
+  }
+  get checkmate() {
+    return this.checked && this.stalemate;
   }
 
-  get check() {
-    let copy = new Position(this.fen.replace(/ [a-h][36] /, ' - '));
-    copy.turn = swap_color(copy.turn);
-    return copy.attacked(copy.kings[this.turn]);
-  }
-
-  make_move(move) {
+  make_move(move, allow_king_capture = false) {
 
     if (typeof move == "string")
       return this.make_move(new Move(move));
@@ -415,6 +387,7 @@ class Position {
       to       = move.to,
       us       = copy.turn,
       them     = swap_color(us),
+      swaped   = this.swaped_turn,
       board    = copy.board,
       castling = copy.castling,
       ep_square = copy.ep_square,
@@ -423,13 +396,8 @@ class Position {
       offset   = move.to - move.from,
       san;
 
-    if (board[to]) {
-      // Destination square is occupied
-      if (board[to].type == KING)
-        die("destination square is occupied by a king");
-      if (board[to].color == us)
-        die("destination square is occupied by same color piece");
-    }
+    if (board[to] && board[to].color == us)
+      die("destination square is occupied by same color piece");
     if (!piece) die("no piece to move");
 
     // Defaults
@@ -448,7 +416,8 @@ class Position {
               (rank(to) === RANK_8 && us === WHITE) ||
               (rank(to) === RANK_1 && us === BLACK)
             ) && !move.promotion
-          ) die("promotion was expected");
+          ) // Default promotion to queen
+            return this.make_move(move.UCI + 'q');
           san = algebraic(to);
           break;
         case pawn_offsets[1]:
@@ -499,9 +468,9 @@ class Position {
             if (
               board[from + 1] ||
               board[to      ] ||
-              copy.attacked(them, from    ) ||
-              copy.attacked(them, from + 1) ||
-              copy.attacked(them, to)
+              swaped.attacking(from    ).length > 0 ||
+              swaped.attacking(from + 1).length > 0 ||
+              swaped.attacking(to      ).length > 0
             ) die("illegal king-side castling");
             board[to - 1] = board[to + 1];
             board[to + 1] = null;
@@ -512,22 +481,22 @@ class Position {
               board[from - 1] ||
               board[from - 2] ||
               board[from - 3] ||
-              copy.attacked(them, from) ||
-              copy.attacked(them, from - 1) ||
-              copy.attacked(them, to)
+              swaped.attacking(from).length > 0 ||
+              swaped.attacking(from - 1).length > 0 ||
+              swaped.attacking(to).length > 0
             ) die("illegal queen-side castling");
             board[to + 1] = board[to - 2];
             board[to - 2] = null;
             san = '0-0-0';
           }
         }
-        // we moved the king, so let's remove castling privilege
-        if (!copy.castling[us])
-          copy.castling[us] |= BITS.KSIDE_CASTLE & BITS.QSIDE_CASTLE;
-        // update king's position record
-        copy.kings[us] = move.to;
       } else if (!PIECE_OFFSETS[KING].includes(offset))
         die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
+      // we moved the king, so let's remove castling privilege
+      if (!copy.castling[us])
+        copy.castling[us] |= BITS.KSIDE_CASTLE & BITS.QSIDE_CASTLE;
+      // update king's position record
+      copy.kings[us] = move.to;
       if (!san) {
         san = 'K'
         if (board[to]) san += 'x';
@@ -582,17 +551,39 @@ class Position {
       }
     }
 
+    if (
+      allow_king_capture &&
+      board[to].color == swap_color(copy.turn) &&
+      board[to].type == KING
+    ) throw ERRORS[13];
+
     board[to] = board[from];
     board[from] = null;
 
-    if (copy.check) throw ERRORS[12];
+    if (copy.checked) throw ERRORS[12];
     copy.turn = swap_color(copy.turn);
-    if (copy.check) san += '+';
+    if (copy.checked) san += '+';
 
     copy.last_move = san;
 
     return copy;
 
+  }
+
+  get checking() {
+    let attacks = this.attacking(this.kings[swap_color(this.turn)]);
+    return attacks.length > 0;
+  }
+
+  get checked() {
+    let attacks = this.swaped_turn.attacking(this.kings[this.turn]);
+    return attacks.length > 0;
+  }
+
+  get swaped_turn() {
+    let copy = new Position(this.fen.replace(/ [a-h][36] /, ' - '), true);
+    copy.turn = swap_color(copy.turn);
+    return copy;
   }
 
   get clone() { return new Position(this.fen); }
@@ -1908,18 +1899,11 @@ if (typeof define !== 'undefined')
 
     /*
 let pos = 
-  [
-    new Position(),
-    "e2e4", "e7e5",
-    "g1f3", "b8c6",
-    "f1b5", "g8f6",
-    "e1g1"
-  ]
-  .reduce(
-    (p, m) => p.make_move(m)
-  );
+  new Position();
 
-console.log(pos.ascii());
-console.log(pos.fen);
-*/
+for (let move of pos.legal_moves)
+  console.log(pos.make_move(move).ascii);
+  */
+
+
 
