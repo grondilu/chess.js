@@ -187,7 +187,8 @@ const BLACK = 'b', WHITE = 'w', EMPTY = -1,
     "1st field (piece positions) is invalid [invalid piece].",              // 8
     "1st field (piece positions) is invalid [row too large].",              // 9
     "Illegal en-passant square",                                           // 10
-    "Wrong number of kings"                                                // 11
+    "Wrong number of kings",                                               // 11
+    "check!",                                                              // 12
   ].map(msg => new Error(msg));
 
 // Utility functions
@@ -528,7 +529,7 @@ class Position {
       } else if (!PIECE_OFFSETS[KING].includes(offset))
         die("wrong move offset for " + (piece.type == KING ? "king" : "knight"));
       if (!san) {
-        san += 'K'
+        san = 'K'
         if (board[to]) san += 'x';
         san += algebraic(to);
       }
@@ -584,7 +585,7 @@ class Position {
     board[to] = board[from];
     board[from] = null;
 
-    if (copy.check) die("check!");
+    if (copy.check) throw ERRORS[12];
     copy.turn = swap_color(copy.turn);
     if (copy.check) san += '+';
 
