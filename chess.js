@@ -25,7 +25,6 @@
  *
  *----------------------------------------------------------------------------*/
 
-// TODO: do not set en-passant square in PGN when en-passant is not possible
 // TODO: check promotion mechanism
 //
 "use strict";
@@ -34,21 +33,34 @@
 const BLACK = 'b', WHITE = 'w', EMPTY = -1,
 
   OPENING_NAMES = {
-    "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2": "King's pawn opening",
-    "rnbqkbnr/ppp2ppp/4p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq - 0 3": "French defense, advance variation",
-    "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2": "Sicilian defense",
-    "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq d6 0 2": "Queen's pawn opening",
-    "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq c3 0 1":   "English opening",
-    "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1":    "Zukertort (aka Reti) opening",
-    "rnbqkbnr/pppppppp/8/8/8/6P1/PPPPPP1P/RNBQKBNR b KQkq - 0 1": "Hungarian opening",
-    "rnbqkbnr/pppppppp/8/8/8/1P6/P1PPPPPP/RNBQKBNR b KQkq - 0 1": "Nimzo-Larsen Attack",
-    "rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/2N5/PPP2PPP/R1BQKBNR b KQkq - 1 3": "French defense, Paulsen variation",
-    "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3": "Ruy Lopez",
-    "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3": "Italian game",
-    "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4": "Italian game, two knights defense",
-    "r1bqkb1r/pppp1ppp/2n2n2/4p1N1/2B1P3/8/PPPP1PPP/RNBQK2R b KQkq - 5 4": "Italian game, two knights defense, knight attack",
-    "r1bqkb1r/p1p2ppp/2n2n2/1p1Pp1N1/2B5/8/PPPP1PPP/RNBQK2R w KQkq - 0 6": "Italian game, two knights defense, Ulvestad variation",
-    "rnbqkbnr/pppppppp/8/8/6P1/8/PPPPPP1P/RNBQKBNR b KQkq g3 0 1": "Grob opening",
+    "1.e4": "King's pawn opening",
+    "1.d4": "Queen's pawn opening",
+    "1.c4": "English opening",
+    "1.Nf3": "Zukertort opening",
+    "1.g3": "Hungarian opening",
+    "1.b3": "Nimzo-Larsen Attack",
+    "1.g4": "Grob opening",
+    "1.e3": "Van Kruijs' opening",
+
+    "1.e4 e5": "King's pawn game",
+    "1.e4 e6": "French defense",
+    "1.e4 c5": "Sicilian defense",
+
+    "1.e4 e5 2.f4": "King's gambit",
+
+    "1.d4 d5": "Queen's pawn game",
+    "1.d4 d5 2.c4": "Queen's gambit",
+
+    "1.d4 Nf6 2.c4 g6 3.Nc3 Bg7": "King's Indian defense",
+    "1.d4 Nf6 2.c4 g6 3.Nc3 Bg7 4.e4 d6 5.f3": "King's Indian defense, Sämisch variation",
+    "1.d4 Nf6 2.c4 g6 3.Nc3 Bg7 4.e4 d6 5.f3 0-0": "King's Indian Defense, Sämisch variation, normal defense",
+    "1.e4 e6 2.d4 d5 3.e5": "French defense, advance variation",
+    "1.e4 e6 2.d4 d5 3.Nc3": "French defense, Paulsen variation",
+    "1.e4 e5 2.Nf3 Nc6 3.Bb5": "Ruy Lopez",
+    "1.e4 e5 2.Nf3 Nc6 3.Bc4": "Italian game",
+    "1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6": "Italian game, two knights defense",
+    "1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6 4.Ng5": "Italian game, two knights defense, knight attack",
+    "1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6 4.Ng5 d5 5.exd5 b5": "Italian game, two knights defense, Ulvestad variation"
   },
 
   PAWN   = 'p',
@@ -429,7 +441,10 @@ class Position {
               board[to] == null
             )
           ) die("Illegal double-squared pawn move");
-          copy.ep_square = new_ep_square;
+          if (
+          (board[to + 1] && board[to + 1].color == them) ||
+          (board[to - 1] && board[to - 1].color == them)
+          ) copy.ep_square = new_ep_square;
           san = algebraic(to);
           break;
         case pawn_offsets[2]:
@@ -571,13 +586,18 @@ class Position {
   }
 
   get checking() {
-    let attacks = this.attacking(this.kings[swap_color(this.turn)]);
-    return attacks.length > 0;
+    return this
+      .attacking(this.kings[swap_color(this.turn)])
+      .length > 0;
   }
 
   get checked() {
-    let attacks = this.swaped_turn.attacking(this.kings[this.turn]);
-    return attacks.length > 0;
+    if (this.last_move && /\+$/.test(this.last_move))
+      return true;
+    return this.swaped_turn
+      .attacking(this.kings[this.turn])
+      .length
+    ;
   }
 
   get swaped_turn() {
@@ -619,7 +639,7 @@ class Game {
     ) die("wrong adjudictation type");
     this.header = {}; for (let key in header) this.header[key] = header[key];
 
-    let pgn = '';
+    let pgn = '', opening;
     [ new Position(), ...moves ]
       .reduce(
         (a,b) => {
@@ -629,13 +649,18 @@ class Game {
           if (a.turn === WHITE)
             pgn += a.move_number + '.';
           pgn += newpos.last_move + ' ';
+          if (OPENING_NAMES[pgn.trim()])
+            opening = OPENING_NAMES[pgn.trim()];
           return newpos;
         }
       );
-    if (header.adjudication) pgn += header.adjudication;
     this.pgn = pgn.trim();
+    if (opening)
+      this.opening = opening.trim();
+    if (header.adjudication) pgn += header.adjudication;
     this.moves = moves;
   }
+
 }
 
 var Chess = function(fen = DEFAULT_POSITION) {
