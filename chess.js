@@ -411,6 +411,8 @@ class Position {
     if (board[to] && board[to].color == us)
       die("destination square is occupied by same color piece");
     if (!piece) die("no piece to move");
+    if (piece.color !== us)
+      die(us + " turn");
 
     // Defaults
     copy.ep_square = EMPTY;
